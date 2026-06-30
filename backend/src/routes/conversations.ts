@@ -202,7 +202,7 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
          ORDER BY created_at ASC`
       );
 
-    const messages = historyResult.recordset.map((m) => ({
+    const messages = historyResult.recordset.map((m: { role: string; content: string }) => ({
       role: m.role as 'user' | 'assistant',
       content: m.content as string,
     }));
