@@ -25,6 +25,7 @@ export default function AgentDetailPage() {
   const [systemPrompt, setSystemPrompt] = useState('');
   const [mondayEnabled, setMondayEnabled] = useState(false);
   const [mondayBoards, setMondayBoards] = useState<string[]>([]);
+  const [mondayWriteToDoc, setMondayWriteToDoc] = useState(false);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -42,6 +43,7 @@ export default function AgentDetailPage() {
           if (cfg.integrations?.monday) {
             setMondayEnabled(true);
             setMondayBoards(cfg.integrations.monday.boards || []);
+            setMondayWriteToDoc(!!cfg.integrations.monday.write_to_doc);
           }
         } catch { /* ignore parse errors */ }
 
@@ -65,7 +67,12 @@ export default function AgentDetailPage() {
     try {
       const config: any = {};
       if (mondayEnabled && mondayBoards.length > 0) {
-        config.integrations = { monday: { boards: mondayBoards } };
+        config.integrations = {
+          monday: {
+            boards: mondayBoards,
+            ...(mondayWriteToDoc ? { write_to_doc: true } : {}),
+          },
+        };
       }
       const result = await api.updateAgent(agentId, {
         name: name.trim(),
@@ -219,6 +226,22 @@ export default function AgentDetailPage() {
                       />
                       <span className="text-xs text-surface-400">CEO Board</span>
                     </label>
+                    <div className="border-t border-dark-5 mt-2 pt-2">
+                      <label className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={mondayWriteToDoc}
+                          onChange={(e) => setMondayWriteToDoc(e.target.checked)}
+                          className="w-3.5 h-3.5 rounded border-dark-5 text-omnii-500 focus:ring-omnii-500"
+                        />
+                        <span className="text-xs text-surface-400">Write to OLT Doc</span>
+                      </label>
+                      {mondayWriteToDoc && (
+                        <p className="text-xs text-surface-600 ml-5 mt-1">
+                          Agent will write CEO section directly to the OLT meeting doc
+                        </p>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>

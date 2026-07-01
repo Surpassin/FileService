@@ -78,7 +78,7 @@ class ApiClient {
 
   async updateAgent(
     id: string,
-    data: Partial<{ name: string; description: string; system_prompt: string; model: string; status: string }>
+    data: Partial<{ name: string; description: string; system_prompt: string; model: string; status: string; config: string }>
   ): Promise<{ agent: Agent }> {
     return this.request(`/api/agents/${id}`, {
       method: 'PUT',
