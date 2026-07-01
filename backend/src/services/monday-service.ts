@@ -62,7 +62,7 @@ export async function fetchOLTData(userId?: string): Promise<string> {
   const query = `
     query {
       boards(ids: [${boardId}]) {
-        items_page(limit: 100) {
+        items_page(limit: 200) {
           items {
             id
             name
