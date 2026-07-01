@@ -1,6 +1,8 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, useEffect, FormEvent } from 'react';
+import { Team } from '@/types';
+import { api } from '@/lib/api';
 
 interface CreateAgentModalProps {
   isOpen: boolean;
@@ -10,12 +12,14 @@ interface CreateAgentModalProps {
     description: string;
     system_prompt: string;
     model: string;
+    team_id?: string;
   }) => Promise<void>;
   initialData?: {
     name?: string;
     description?: string;
     system_prompt?: string;
     model?: string;
+    team_id?: string;
   };
   title?: string;
 }
@@ -37,8 +41,16 @@ export default function CreateAgentModal({
   const [description, setDescription] = useState(initialData?.description || '');
   const [systemPrompt, setSystemPrompt] = useState(initialData?.system_prompt || '');
   const [model, setModel] = useState(initialData?.model || 'claude-sonnet-4-6');
+  const [teamId, setTeamId] = useState(initialData?.team_id || '');
+  const [teams, setTeams] = useState<Team[]>([]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState('');
+
+  useEffect(() => {
+    if (isOpen) {
+      api.getTeams().then((data) => setTeams(data.teams || [])).catch(() => {});
+    }
+  }, [isOpen]);
 
   if (!isOpen) return null;
 
@@ -56,6 +68,7 @@ export default function CreateAgentModal({
         description: description.trim(),
         system_prompt: systemPrompt.trim(),
         model,
+        ...(teamId ? { team_id: teamId } : {}),
       });
       onClose();
     } catch (err) {
@@ -147,6 +160,29 @@ export default function CreateAgentModal({
               ))}
             </select>
           </div>
+
+          {teams.length > 0 && (
+            <div>
+              <label className="block text-sm font-medium text-surface-300 mb-1.5">
+                Share with Team
+              </label>
+              <select
+                value={teamId}
+                onChange={(e) => setTeamId(e.target.value)}
+                className="input-field"
+              >
+                <option value="">Personal (only me)</option>
+                {teams.map((t) => (
+                  <option key={t.id} value={t.id}>
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+              <p className="text-xs text-surface-600 mt-1">
+                Team agents are visible to all team members
+              </p>
+            </div>
+          )}
 
           <div className="flex justify-end gap-3 pt-2">
             <button type="button" onClick={onClose} className="btn-secondary">

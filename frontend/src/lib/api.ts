@@ -1,4 +1,4 @@
-import { User, Agent, Conversation, Message } from '@/types';
+import { User, Agent, Conversation, Message, Team, TeamMember } from '@/types';
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
 
@@ -68,6 +68,7 @@ class ApiClient {
     description?: string;
     system_prompt?: string;
     model?: string;
+    team_id?: string;
   }): Promise<{ agent: Agent }> {
     return this.request('/api/agents', {
       method: 'POST',
@@ -114,6 +115,33 @@ class ApiClient {
 
   async deleteConversation(conversationId: string): Promise<void> {
     return this.request(`/api/conversations/${conversationId}`, { method: 'DELETE' });
+  }
+
+  // Teams
+  async getTeams(): Promise<{ teams: Team[] }> {
+    return this.request('/api/teams');
+  }
+
+  async createTeam(name: string): Promise<{ team: Team }> {
+    return this.request('/api/teams', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  async getTeamMembers(teamId: string): Promise<{ members: TeamMember[] }> {
+    return this.request(`/api/teams/${teamId}/members`);
+  }
+
+  async inviteTeamMember(teamId: string, email: string, role?: string): Promise<{ member: TeamMember }> {
+    return this.request(`/api/teams/${teamId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ email, role: role || 'member' }),
+    });
+  }
+
+  async removeTeamMember(teamId: string, memberId: string): Promise<void> {
+    return this.request(`/api/teams/${teamId}/members/${memberId}`, { method: 'DELETE' });
   }
 }
 

@@ -37,3 +37,22 @@ export interface Message {
   content: string;
   created_at: string;
 }
+
+export interface Team {
+  id: string;
+  name: string;
+  owner_id: string;
+  member_role: string;
+  member_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamMember {
+  id: string;
+  user_id: string;
+  name: string;
+  email: string;
+  role: string;
+  created_at: string;
+}

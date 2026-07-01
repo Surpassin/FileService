@@ -9,7 +9,7 @@ const router = Router();
 // All routes require authentication
 router.use(authenticate);
 
-// GET / — list agents owned by current user
+// GET / — list agents owned by current user OR shared via teams
 router.get('/', async (req: Request, res: Response) => {
   try {
     const pool = await getPool();
@@ -17,11 +17,18 @@ router.get('/', async (req: Request, res: Response) => {
 
     const result = await pool
       .request()
-      .input('owner_id', sql.UniqueIdentifier, userId)
+      .input('user_id', sql.UniqueIdentifier, userId)
       .query(
-        `SELECT id, name, description, system_prompt, model, owner_id, created_at, updated_at
-         FROM agents WHERE owner_id = @owner_id
-         ORDER BY created_at DESC`
+        `SELECT DISTINCT a.id, a.name, a.description, a.system_prompt, a.model,
+                a.owner_id, a.team_id, a.created_at, a.updated_at,
+                t.name AS team_name,
+                u.name AS owner_name
+         FROM agents a
+         LEFT JOIN teams t ON t.id = a.team_id
+         LEFT JOIN users u ON u.id = a.owner_id
+         WHERE a.owner_id = @user_id
+            OR a.team_id IN (SELECT team_id FROM team_members WHERE user_id = @user_id)
+         ORDER BY a.created_at DESC`
       );
 
     return res.json({ agents: result.recordset });
@@ -31,7 +38,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /:id — get single agent (verify ownership)
+// GET /:id — get single agent (verify ownership or team membership)
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const pool = await getPool();
@@ -40,10 +47,16 @@ router.get('/:id', async (req: Request, res: Response) => {
     const result = await pool
       .request()
       .input('id', sql.UniqueIdentifier, req.params.id)
-      .input('owner_id', sql.UniqueIdentifier, userId)
+      .input('user_id', sql.UniqueIdentifier, userId)
       .query(
-        `SELECT id, name, description, system_prompt, model, owner_id, created_at, updated_at
-         FROM agents WHERE id = @id AND owner_id = @owner_id`
+        `SELECT a.id, a.name, a.description, a.system_prompt, a.model,
+                a.owner_id, a.team_id, a.created_at, a.updated_at,
+                t.name AS team_name
+         FROM agents a
+         LEFT JOIN teams t ON t.id = a.team_id
+         WHERE a.id = @id
+           AND (a.owner_id = @user_id
+                OR a.team_id IN (SELECT team_id FROM team_members WHERE user_id = @user_id))`
       );
 
     if (result.recordset.length === 0) {
@@ -60,7 +73,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 // POST / — create agent
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, description, system_prompt, model } = req.body;
+    const { name, description, system_prompt, model, team_id } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'Agent name is required' });
@@ -71,6 +84,19 @@ router.post('/', async (req: Request, res: Response) => {
     const agentId = uuidv4();
     const now = new Date();
 
+    // If team_id provided, verify user is a member
+    if (team_id) {
+      const membership = await pool
+        .request()
+        .input('team_id', sql.UniqueIdentifier, team_id)
+        .input('user_id', sql.UniqueIdentifier, userId)
+        .query('SELECT role FROM team_members WHERE team_id = @team_id AND user_id = @user_id');
+
+      if (membership.recordset.length === 0) {
+        return res.status(403).json({ error: 'You are not a member of this team' });
+      }
+    }
+
     await pool
       .request()
       .input('id', sql.UniqueIdentifier, agentId)
@@ -79,11 +105,12 @@ router.post('/', async (req: Request, res: Response) => {
       .input('system_prompt', sql.NVarChar(sql.MAX), system_prompt || null)
       .input('model', sql.NVarChar, model || 'claude-sonnet-4-20250514')
       .input('owner_id', sql.UniqueIdentifier, userId)
+      .input('team_id', sql.UniqueIdentifier, team_id || null)
       .input('created_at', sql.DateTime2, now)
       .input('updated_at', sql.DateTime2, now)
       .query(
-        `INSERT INTO agents (id, name, description, system_prompt, model, owner_id, created_at, updated_at)
-         VALUES (@id, @name, @description, @system_prompt, @model, @owner_id, @created_at, @updated_at)`
+        `INSERT INTO agents (id, name, description, system_prompt, model, owner_id, team_id, created_at, updated_at)
+         VALUES (@id, @name, @description, @system_prompt, @model, @owner_id, @team_id, @created_at, @updated_at)`
       );
 
     // Log to audit_log

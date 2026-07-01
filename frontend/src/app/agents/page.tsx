@@ -32,6 +32,7 @@ export default function AgentsPage() {
     description: string;
     system_prompt: string;
     model: string;
+    team_id?: string;
   }) => {
     const result = await api.createAgent(data);
     setAgents((prev) => [...prev, result.agent]);
@@ -116,6 +117,11 @@ export default function AgentsPage() {
                       {agent.status}
                     </span>
                     <span className="badge-info">{agent.model || 'claude-sonnet-4-6'}</span>
+                    {(agent as any).team_name && (
+                      <span className="text-xs px-2 py-0.5 rounded-full bg-omnii-600/15 text-omnii-400">
+                        {(agent as any).team_name}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm text-surface-500">
                     {agent.description || 'No description'}

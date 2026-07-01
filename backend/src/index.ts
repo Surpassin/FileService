@@ -34,6 +34,7 @@ app.get('/health', (_req: Request, res: Response) => {
 app.use('/api/auth', require('./routes/auth').default);
 app.use('/api/agents', require('./routes/agents').default);
 app.use('/api/conversations', require('./routes/conversations').default);
+app.use('/api/teams', require('./routes/teams').default);
 
 app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   console.error('Unhandled error:', err.message);

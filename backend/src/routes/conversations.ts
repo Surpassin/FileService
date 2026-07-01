@@ -91,12 +91,16 @@ router.post('/', async (req: Request, res: Response) => {
     const pool = await getPool();
     const userId = (req as any).user.userId;
 
-    // Verify agent ownership
+    // Verify agent access (owner or team member)
     const agentResult = await pool
       .request()
       .input('id', sql.UniqueIdentifier, agentId)
-      .input('owner_id', sql.UniqueIdentifier, userId)
-      .query('SELECT id FROM agents WHERE id = @id AND owner_id = @owner_id');
+      .input('user_id', sql.UniqueIdentifier, userId)
+      .query(
+        `SELECT id FROM agents WHERE id = @id
+         AND (owner_id = @user_id
+              OR team_id IN (SELECT team_id FROM team_members WHERE user_id = @user_id))`
+      );
 
     if (agentResult.recordset.length === 0) {
       return res.status(404).json({ error: 'Agent not found' });
