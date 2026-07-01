@@ -19,7 +19,7 @@ router.get('/', async (req: Request, res: Response) => {
       .request()
       .input('user_id', sql.UniqueIdentifier, userId)
       .query(
-        `SELECT DISTINCT a.id, a.name, a.description, a.system_prompt, a.model,
+        `SELECT DISTINCT a.id, a.name, a.description, a.system_prompt, a.model, a.config,
                 a.owner_id, a.team_id, a.created_at, a.updated_at,
                 t.name AS team_name,
                 u.name AS owner_name
@@ -49,7 +49,7 @@ router.get('/:id', async (req: Request, res: Response) => {
       .input('id', sql.UniqueIdentifier, req.params.id)
       .input('user_id', sql.UniqueIdentifier, userId)
       .query(
-        `SELECT a.id, a.name, a.description, a.system_prompt, a.model,
+        `SELECT a.id, a.name, a.description, a.system_prompt, a.model, a.config,
                 a.owner_id, a.team_id, a.created_at, a.updated_at,
                 t.name AS team_name
          FROM agents a
@@ -162,7 +162,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const { name, description, system_prompt, model } = req.body;
+    const { name, description, system_prompt, model, config } = req.body;
     const now = new Date();
 
     // Build dynamic SET clause for partial updates
@@ -187,6 +187,10 @@ router.put('/:id', async (req: Request, res: Response) => {
     if (model !== undefined) {
       setClauses.push('model = @model');
       request.input('model', sql.NVarChar, model);
+    }
+    if (config !== undefined) {
+      setClauses.push('config = @config');
+      request.input('config', sql.NVarChar(sql.MAX), typeof config === 'string' ? config : JSON.stringify(config));
     }
 
     await request.query(

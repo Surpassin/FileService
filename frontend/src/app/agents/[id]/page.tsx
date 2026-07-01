@@ -23,6 +23,8 @@ export default function AgentDetailPage() {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [systemPrompt, setSystemPrompt] = useState('');
+  const [mondayEnabled, setMondayEnabled] = useState(false);
+  const [mondayBoards, setMondayBoards] = useState<string[]>([]);
 
   useEffect(() => {
     const fetchData = async () => {
@@ -35,6 +37,13 @@ export default function AgentDetailPage() {
         setName(agentData.agent.name);
         setDescription(agentData.agent.description || '');
         setSystemPrompt(agentData.agent.system_prompt || '');
+        try {
+          const cfg = JSON.parse((agentData.agent as any).config || '{}');
+          if (cfg.integrations?.monday) {
+            setMondayEnabled(true);
+            setMondayBoards(cfg.integrations.monday.boards || []);
+          }
+        } catch { /* ignore parse errors */ }
 
         const convs = convData.conversations || [];
         setConversations(convs);
@@ -54,11 +63,16 @@ export default function AgentDetailPage() {
     setIsSaving(true);
     setSaveMessage('');
     try {
+      const config: any = {};
+      if (mondayEnabled && mondayBoards.length > 0) {
+        config.integrations = { monday: { boards: mondayBoards } };
+      }
       const result = await api.updateAgent(agentId, {
         name: name.trim(),
         description: description.trim(),
         system_prompt: systemPrompt.trim(),
-      });
+        config: JSON.stringify(config),
+      } as any);
       setAgent(result.agent);
       setSaveMessage('Saved');
       setTimeout(() => setSaveMessage(''), 2000);
@@ -156,6 +170,58 @@ export default function AgentDetailPage() {
                 className="input-field min-h-[200px] resize-y"
                 rows={8}
               />
+            </div>
+
+            <div className="border-t border-dark-4 pt-4">
+              <label className="block text-sm font-medium text-surface-300 mb-2">Integrations</label>
+              <div className="bg-dark-3 rounded-lg p-3">
+                <label className="flex items-center gap-2 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={mondayEnabled}
+                    onChange={(e) => {
+                      setMondayEnabled(e.target.checked);
+                      if (!e.target.checked) setMondayBoards([]);
+                    }}
+                    className="w-4 h-4 rounded border-dark-5 text-omnii-500 focus:ring-omnii-500"
+                  />
+                  <span className="text-sm text-surface-300">Monday.com</span>
+                </label>
+                {mondayEnabled && (
+                  <div className="mt-2 ml-6 space-y-1">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={mondayBoards.includes('olt_actions')}
+                        onChange={(e) => {
+                          setMondayBoards(prev =>
+                            e.target.checked
+                              ? [...prev, 'olt_actions']
+                              : prev.filter(b => b !== 'olt_actions')
+                          );
+                        }}
+                        className="w-3.5 h-3.5 rounded border-dark-5 text-omnii-500 focus:ring-omnii-500"
+                      />
+                      <span className="text-xs text-surface-400">OLT Actions Board</span>
+                    </label>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={mondayBoards.includes('ceo')}
+                        onChange={(e) => {
+                          setMondayBoards(prev =>
+                            e.target.checked
+                              ? [...prev, 'ceo']
+                              : prev.filter(b => b !== 'ceo')
+                          );
+                        }}
+                        className="w-3.5 h-3.5 rounded border-dark-5 text-omnii-500 focus:ring-omnii-500"
+                      />
+                      <span className="text-xs text-surface-400">CEO Board</span>
+                    </label>
+                  </div>
+                )}
+              </div>
             </div>
 
             <div className="flex items-center gap-3">

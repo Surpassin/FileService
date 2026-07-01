@@ -4,6 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getPool } from '../config/database';
 import { authenticate } from '../middleware/auth';
 import { runAgent } from '../services/agent-service';
+import { fetchOLTData, fetchCEOBoardData } from '../services/monday-service';
 
 const router = Router();
 
@@ -172,7 +173,7 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
       .request()
       .input('id', sql.UniqueIdentifier, conversation.agent_id)
       .query(
-        `SELECT system_prompt, model FROM agents WHERE id = @id`
+        `SELECT system_prompt, model, config FROM agents WHERE id = @id`
       );
 
     if (agentResult.recordset.length === 0) {
@@ -211,9 +212,30 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
       content: m.content as string,
     }));
 
+    // Fetch integration data if configured
+    let systemPrompt = agent.system_prompt || 'You are a helpful assistant.';
+    try {
+      const agentConfig = JSON.parse(agent.config || '{}');
+      if (agentConfig.integrations?.monday) {
+        const mondayBoards = agentConfig.integrations.monday.boards || [];
+        let mondayContext = '';
+        if (mondayBoards.includes('olt_actions')) {
+          mondayContext += await fetchOLTData();
+        }
+        if (mondayBoards.includes('ceo')) {
+          mondayContext += await fetchCEOBoardData();
+        }
+        if (mondayContext) {
+          systemPrompt += '\n\n---\n\n# LIVE DATA FROM MONDAY.COM\n' + mondayContext;
+        }
+      }
+    } catch (integrationErr: any) {
+      console.error('Integration data fetch error:', integrationErr.message);
+    }
+
     // Call Claude API
     const assistantContent = await runAgent(
-      agent.system_prompt || 'You are a helpful assistant.',
+      systemPrompt,
       messages,
       agent.model || 'claude-sonnet-4-20250514'
     );
