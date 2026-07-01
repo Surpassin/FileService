@@ -48,6 +48,7 @@ export async function initializeDatabase(): Promise<void> {
       password_hash NVARCHAR(255) NOT NULL,
       role NVARCHAR(50) NOT NULL DEFAULT 'user',
       created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+      updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
       last_login_at DATETIME2 NULL
     )
   `);
@@ -97,8 +98,26 @@ export async function initializeDatabase(): Promise<void> {
       id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
       user_id UNIQUEIDENTIFIER NOT NULL REFERENCES users(id),
       action NVARCHAR(255) NOT NULL,
+      entity_type NVARCHAR(255) NULL,
+      entity_id UNIQUEIDENTIFIER NULL,
       details NVARCHAR(MAX) NULL,
       created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE()
     )
+  `);
+
+  // Add missing columns to existing tables
+  await db.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('users') AND name = 'updated_at')
+    ALTER TABLE users ADD updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+  `);
+
+  await db.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('audit_log') AND name = 'entity_type')
+    ALTER TABLE audit_log ADD entity_type NVARCHAR(255) NULL
+  `);
+
+  await db.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('audit_log') AND name = 'entity_id')
+    ALTER TABLE audit_log ADD entity_id UNIQUEIDENTIFIER NULL
   `);
 }
