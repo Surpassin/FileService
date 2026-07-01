@@ -134,6 +134,24 @@ export async function initializeDatabase(): Promise<void> {
     ALTER TABLE agents ADD team_id UNIQUEIDENTIFIER NULL REFERENCES teams(id)
   `);
 
+  // Add visibility column to agents (private | team | selected)
+  await db.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('agents') AND name = 'visibility')
+    ALTER TABLE agents ADD visibility NVARCHAR(50) NOT NULL DEFAULT 'private'
+  `);
+
+  // Agent access table for per-user grants
+  await db.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'agent_access')
+    CREATE TABLE agent_access (
+      id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+      agent_id UNIQUEIDENTIFIER NOT NULL REFERENCES agents(id),
+      user_id UNIQUEIDENTIFIER NOT NULL REFERENCES users(id),
+      created_at DATETIME2 NOT NULL DEFAULT GETUTCDATE(),
+      UNIQUE(agent_id, user_id)
+    )
+  `);
+
   // Add missing columns to existing tables
   await db.request().query(`
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('users') AND name = 'updated_at')

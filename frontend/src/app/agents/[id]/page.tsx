@@ -2,10 +2,16 @@
 
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
-import { Agent, Conversation } from '@/types';
+import { Agent, Conversation, Team, TeamMember } from '@/types';
 import { api } from '@/lib/api';
 import AppShell from '@/components/layout/AppShell';
 import ChatInterface from '@/components/chat/ChatInterface';
+
+interface AccessUser {
+  user_id: string;
+  name: string;
+  email: string;
+}
 
 export default function AgentDetailPage() {
   const params = useParams();
@@ -18,6 +24,7 @@ export default function AgentDetailPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [saveMessage, setSaveMessage] = useState('');
+  const [isOwner, setIsOwner] = useState(false);
 
   // Editable fields
   const [name, setName] = useState('');
@@ -27,19 +34,32 @@ export default function AgentDetailPage() {
   const [mondayBoards, setMondayBoards] = useState<string[]>([]);
   const [mondayWriteToDoc, setMondayWriteToDoc] = useState(false);
 
+  // Visibility
+  const [visibility, setVisibility] = useState<'private' | 'team' | 'selected'>('private');
+  const [teams, setTeams] = useState<Team[]>([]);
+  const [teamId, setTeamId] = useState('');
+  const [accessUsers, setAccessUsers] = useState<AccessUser[]>([]);
+  const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
+
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [agentData, convData] = await Promise.all([
+        const [agentData, convData, meData] = await Promise.all([
           api.getAgent(agentId),
           api.getConversations(agentId),
+          api.getMe(),
         ]);
-        setAgent(agentData.agent);
-        setName(agentData.agent.name);
-        setDescription(agentData.agent.description || '');
-        setSystemPrompt(agentData.agent.system_prompt || '');
+        const ag = agentData.agent;
+        setAgent(ag);
+        setName(ag.name);
+        setDescription(ag.description || '');
+        setSystemPrompt(ag.system_prompt || '');
+        setVisibility(((ag as any).visibility as any) || 'private');
+        setTeamId((ag as any).team_id || '');
+        setIsOwner((ag as any).owner_id === meData.user.id);
+
         try {
-          const cfg = JSON.parse((agentData.agent as any).config || '{}');
+          const cfg = JSON.parse((ag as any).config || '{}');
           if (cfg.integrations?.monday) {
             setMondayEnabled(true);
             setMondayBoards(cfg.integrations.monday.boards || []);
@@ -51,6 +71,28 @@ export default function AgentDetailPage() {
         setConversations(convs);
         if (convs.length > 0) {
           setSelectedConversation(convs[0].id);
+        }
+
+        // Load teams and access list for owner
+        if ((ag as any).owner_id === meData.user.id) {
+          const teamsData = await api.getTeams();
+          setTeams(teamsData.teams || []);
+
+          try {
+            const accessData = await api.getAgentAccess(agentId);
+            setAccessUsers(accessData.access || []);
+          } catch { /* ignore if no access yet */ }
+
+          // Load team members for the member picker
+          if (teamsData.teams?.length > 0) {
+            const firstTeam = (ag as any).team_id || teamsData.teams[0].id;
+            try {
+              const membersData = await api.getTeamMembers(firstTeam);
+              setTeamMembers(
+                (membersData.members || []).filter((m: TeamMember) => m.user_id !== meData.user.id)
+              );
+            } catch { /* ignore */ }
+          }
         }
       } catch (err) {
         console.error('Failed to load agent:', err);
@@ -74,12 +116,26 @@ export default function AgentDetailPage() {
           },
         };
       }
-      const result = await api.updateAgent(agentId, {
+      const updateData: any = {
         name: name.trim(),
         description: description.trim(),
         system_prompt: systemPrompt.trim(),
         config: JSON.stringify(config),
-      } as any);
+        visibility,
+      };
+
+      if (visibility === 'team' && teamId) {
+        updateData.team_id = teamId;
+      }
+      if (visibility === 'selected') {
+        updateData.access_user_ids = accessUsers.map((u) => u.user_id);
+        if (teamId) updateData.team_id = teamId;
+      }
+      if (visibility === 'private') {
+        updateData.access_user_ids = [];
+      }
+
+      const result = await api.updateAgent(agentId, updateData);
       setAgent(result.agent);
       setSaveMessage('Saved');
       setTimeout(() => setSaveMessage(''), 2000);
@@ -88,6 +144,16 @@ export default function AgentDetailPage() {
     } finally {
       setIsSaving(false);
     }
+  };
+
+  const toggleMemberAccess = (member: TeamMember) => {
+    setAccessUsers((prev) => {
+      const exists = prev.find((u) => u.user_id === member.user_id);
+      if (exists) {
+        return prev.filter((u) => u.user_id !== member.user_id);
+      }
+      return [...prev, { user_id: member.user_id, name: member.name, email: member.email }];
+    });
   };
 
   const handleNewConversation = async () => {
@@ -246,6 +312,57 @@ export default function AgentDetailPage() {
                 )}
               </div>
             </div>
+
+            {isOwner && (
+              <div className="border-t border-dark-4 pt-4">
+                <label className="block text-sm font-medium text-surface-300 mb-2">Visibility</label>
+                <select
+                  value={visibility}
+                  onChange={(e) => setVisibility(e.target.value as any)}
+                  className="input-field mb-2"
+                >
+                  <option value="private">Private (only me)</option>
+                  {teams.length > 0 && <option value="team">Entire team</option>}
+                  {teams.length > 0 && <option value="selected">Selected members</option>}
+                </select>
+
+                {visibility === 'team' && teams.length > 0 && (
+                  <select
+                    value={teamId}
+                    onChange={(e) => setTeamId(e.target.value)}
+                    className="input-field"
+                  >
+                    <option value="" disabled>Select team</option>
+                    {teams.map((t) => (
+                      <option key={t.id} value={t.id}>{t.name}</option>
+                    ))}
+                  </select>
+                )}
+
+                {visibility === 'selected' && (
+                  <div className="bg-dark-3 rounded-lg p-3 mt-2 space-y-1">
+                    {teamMembers.length === 0 ? (
+                      <p className="text-xs text-surface-500">No team members to select. Create a team and invite members first.</p>
+                    ) : (
+                      teamMembers.map((member) => (
+                        <label key={member.user_id} className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={accessUsers.some((u) => u.user_id === member.user_id)}
+                            onChange={() => toggleMemberAccess(member)}
+                            className="w-3.5 h-3.5 rounded border-dark-5 text-omnii-500 focus:ring-omnii-500"
+                          />
+                          <div>
+                            <span className="text-xs text-surface-300">{member.name}</span>
+                            <span className="text-xs text-surface-600 ml-1">({member.email})</span>
+                          </div>
+                        </label>
+                      ))
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center gap-3">
               <button

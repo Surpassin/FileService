@@ -90,6 +90,10 @@ class ApiClient {
     return this.request(`/api/agents/${id}`, { method: 'DELETE' });
   }
 
+  async getAgentAccess(agentId: string): Promise<{ access: { user_id: string; name: string; email: string }[] }> {
+    return this.request(`/api/agents/${agentId}/access`);
+  }
+
   // Conversations
   async getConversations(agentId: string): Promise<{ conversations: Conversation[] }> {
     return this.request(`/api/conversations?agentId=${agentId}`);

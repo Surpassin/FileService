@@ -9,7 +9,7 @@ const router = Router();
 // All routes require authentication
 router.use(authenticate);
 
-// GET / — list agents owned by current user OR shared via teams
+// GET / — list agents the current user can see
 router.get('/', async (req: Request, res: Response) => {
   try {
     const pool = await getPool();
@@ -20,14 +20,17 @@ router.get('/', async (req: Request, res: Response) => {
       .input('user_id', sql.UniqueIdentifier, userId)
       .query(
         `SELECT DISTINCT a.id, a.name, a.description, a.system_prompt, a.model, a.config,
-                a.owner_id, a.team_id, a.created_at, a.updated_at,
+                a.owner_id, a.team_id, a.visibility, a.created_at, a.updated_at,
                 t.name AS team_name,
                 u.name AS owner_name
          FROM agents a
          LEFT JOIN teams t ON t.id = a.team_id
          LEFT JOIN users u ON u.id = a.owner_id
          WHERE a.owner_id = @user_id
-            OR a.team_id IN (SELECT team_id FROM team_members WHERE user_id = @user_id)
+            OR (a.visibility = 'team'
+                AND a.team_id IN (SELECT team_id FROM team_members WHERE user_id = @user_id))
+            OR (a.visibility = 'selected'
+                AND a.id IN (SELECT agent_id FROM agent_access WHERE user_id = @user_id))
          ORDER BY a.created_at DESC`
       );
 
@@ -38,7 +41,7 @@ router.get('/', async (req: Request, res: Response) => {
   }
 });
 
-// GET /:id — get single agent (verify ownership or team membership)
+// GET /:id — get single agent (verify access)
 router.get('/:id', async (req: Request, res: Response) => {
   try {
     const pool = await getPool();
@@ -50,13 +53,16 @@ router.get('/:id', async (req: Request, res: Response) => {
       .input('user_id', sql.UniqueIdentifier, userId)
       .query(
         `SELECT a.id, a.name, a.description, a.system_prompt, a.model, a.config,
-                a.owner_id, a.team_id, a.created_at, a.updated_at,
+                a.owner_id, a.team_id, a.visibility, a.created_at, a.updated_at,
                 t.name AS team_name
          FROM agents a
          LEFT JOIN teams t ON t.id = a.team_id
          WHERE a.id = @id
            AND (a.owner_id = @user_id
-                OR a.team_id IN (SELECT team_id FROM team_members WHERE user_id = @user_id))`
+                OR (a.visibility = 'team'
+                    AND a.team_id IN (SELECT team_id FROM team_members WHERE user_id = @user_id))
+                OR (a.visibility = 'selected'
+                    AND a.id IN (SELECT agent_id FROM agent_access WHERE user_id = @user_id)))`
       );
 
     if (result.recordset.length === 0) {
@@ -73,7 +79,7 @@ router.get('/:id', async (req: Request, res: Response) => {
 // POST / — create agent
 router.post('/', async (req: Request, res: Response) => {
   try {
-    const { name, description, system_prompt, model, team_id } = req.body;
+    const { name, description, system_prompt, model, team_id, visibility } = req.body;
 
     if (!name) {
       return res.status(400).json({ error: 'Agent name is required' });
@@ -97,6 +103,8 @@ router.post('/', async (req: Request, res: Response) => {
       }
     }
 
+    const agentVisibility = visibility || (team_id ? 'team' : 'private');
+
     await pool
       .request()
       .input('id', sql.UniqueIdentifier, agentId)
@@ -106,11 +114,12 @@ router.post('/', async (req: Request, res: Response) => {
       .input('model', sql.NVarChar, model || 'claude-sonnet-4-20250514')
       .input('owner_id', sql.UniqueIdentifier, userId)
       .input('team_id', sql.UniqueIdentifier, team_id || null)
+      .input('visibility', sql.NVarChar, agentVisibility)
       .input('created_at', sql.DateTime2, now)
       .input('updated_at', sql.DateTime2, now)
       .query(
-        `INSERT INTO agents (id, name, description, system_prompt, model, owner_id, team_id, created_at, updated_at)
-         VALUES (@id, @name, @description, @system_prompt, @model, @owner_id, @team_id, @created_at, @updated_at)`
+        `INSERT INTO agents (id, name, description, system_prompt, model, owner_id, team_id, visibility, created_at, updated_at)
+         VALUES (@id, @name, @description, @system_prompt, @model, @owner_id, @team_id, @visibility, @created_at, @updated_at)`
       );
 
     // Log to audit_log
@@ -162,7 +171,7 @@ router.put('/:id', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Agent not found' });
     }
 
-    const { name, description, system_prompt, model, config } = req.body;
+    const { name, description, system_prompt, model, config, visibility, team_id, access_user_ids } = req.body;
     const now = new Date();
 
     // Build dynamic SET clause for partial updates
@@ -192,10 +201,39 @@ router.put('/:id', async (req: Request, res: Response) => {
       setClauses.push('config = @config');
       request.input('config', sql.NVarChar(sql.MAX), typeof config === 'string' ? config : JSON.stringify(config));
     }
+    if (visibility !== undefined) {
+      setClauses.push('visibility = @visibility');
+      request.input('visibility', sql.NVarChar, visibility);
+    }
+    if (team_id !== undefined) {
+      setClauses.push('team_id = @team_id');
+      request.input('team_id', sql.UniqueIdentifier, team_id || null);
+    }
 
     await request.query(
       `UPDATE agents SET ${setClauses.join(', ')} WHERE id = @id AND owner_id = @owner_id`
     );
+
+    // Update agent_access if access_user_ids provided
+    if (access_user_ids !== undefined && Array.isArray(access_user_ids)) {
+      await pool
+        .request()
+        .input('agent_id', sql.UniqueIdentifier, req.params.id)
+        .query('DELETE FROM agent_access WHERE agent_id = @agent_id');
+
+      for (const uid of access_user_ids) {
+        await pool
+          .request()
+          .input('id', sql.UniqueIdentifier, uuidv4())
+          .input('agent_id', sql.UniqueIdentifier, req.params.id)
+          .input('user_id', sql.UniqueIdentifier, uid)
+          .input('created_at', sql.DateTime2, now)
+          .query(
+            `INSERT INTO agent_access (id, agent_id, user_id, created_at)
+             VALUES (@id, @agent_id, @user_id, @created_at)`
+          );
+      }
+    }
 
     // Fetch updated agent
     const updated = await pool
@@ -203,13 +241,48 @@ router.put('/:id', async (req: Request, res: Response) => {
       .input('id', sql.UniqueIdentifier, req.params.id)
       .input('owner_id', sql.UniqueIdentifier, userId)
       .query(
-        `SELECT id, name, description, system_prompt, model, owner_id, created_at, updated_at
+        `SELECT id, name, description, system_prompt, model, config, owner_id, team_id, visibility, created_at, updated_at
          FROM agents WHERE id = @id AND owner_id = @owner_id`
       );
 
     return res.json({ agent: updated.recordset[0] });
   } catch (error: any) {
     console.error('Update agent error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// GET /:id/access — list users who have access to this agent
+router.get('/:id/access', async (req: Request, res: Response) => {
+  try {
+    const pool = await getPool();
+    const userId = (req as any).user.userId;
+
+    // Verify ownership
+    const existing = await pool
+      .request()
+      .input('id', sql.UniqueIdentifier, req.params.id)
+      .input('owner_id', sql.UniqueIdentifier, userId)
+      .query('SELECT id FROM agents WHERE id = @id AND owner_id = @owner_id');
+
+    if (existing.recordset.length === 0) {
+      return res.status(404).json({ error: 'Agent not found' });
+    }
+
+    const result = await pool
+      .request()
+      .input('agent_id', sql.UniqueIdentifier, req.params.id)
+      .query(
+        `SELECT aa.user_id, u.name, u.email
+         FROM agent_access aa
+         INNER JOIN users u ON u.id = aa.user_id
+         WHERE aa.agent_id = @agent_id
+         ORDER BY u.name`
+      );
+
+    return res.json({ access: result.recordset });
+  } catch (error: any) {
+    console.error('Get agent access error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -245,6 +318,12 @@ router.delete('/:id', async (req: Request, res: Response) => {
       .request()
       .input('agent_id', sql.UniqueIdentifier, req.params.id)
       .query('DELETE FROM conversations WHERE agent_id = @agent_id');
+
+    // Delete agent access grants
+    await pool
+      .request()
+      .input('agent_id', sql.UniqueIdentifier, req.params.id)
+      .query('DELETE FROM agent_access WHERE agent_id = @agent_id');
 
     // Delete the agent
     await pool

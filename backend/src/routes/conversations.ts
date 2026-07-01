@@ -92,7 +92,7 @@ router.post('/', async (req: Request, res: Response) => {
     const pool = await getPool();
     const userId = (req as any).user.userId;
 
-    // Verify agent access (owner or team member)
+    // Verify agent access
     const agentResult = await pool
       .request()
       .input('id', sql.UniqueIdentifier, agentId)
@@ -100,7 +100,10 @@ router.post('/', async (req: Request, res: Response) => {
       .query(
         `SELECT id FROM agents WHERE id = @id
          AND (owner_id = @user_id
-              OR team_id IN (SELECT team_id FROM team_members WHERE user_id = @user_id))`
+              OR (visibility = 'team'
+                  AND team_id IN (SELECT team_id FROM team_members WHERE user_id = @user_id))
+              OR (visibility = 'selected'
+                  AND id IN (SELECT agent_id FROM agent_access WHERE user_id = @user_id)))`
       );
 
     if (agentResult.recordset.length === 0) {
