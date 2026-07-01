@@ -185,7 +185,7 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
       .input('id', sql.UniqueIdentifier, userMessageId)
       .input('conversation_id', sql.UniqueIdentifier, req.params.id)
       .input('role', sql.NVarChar, 'user')
-      .input('content', sql.NVarChar, content)
+      .input('content', sql.NVarChar(sql.MAX), content)
       .input('created_at', sql.DateTime2, now)
       .query(
         `INSERT INTO messages (id, conversation_id, role, content, created_at)
@@ -222,7 +222,7 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
       .input('id', sql.UniqueIdentifier, assistantMessageId)
       .input('conversation_id', sql.UniqueIdentifier, req.params.id)
       .input('role', sql.NVarChar, 'assistant')
-      .input('content', sql.NVarChar, assistantContent)
+      .input('content', sql.NVarChar(sql.MAX), assistantContent)
       .input('created_at', sql.DateTime2, assistantCreatedAt)
       .query(
         `INSERT INTO messages (id, conversation_id, role, content, created_at)

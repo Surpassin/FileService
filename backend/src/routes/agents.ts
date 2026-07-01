@@ -75,8 +75,8 @@ router.post('/', async (req: Request, res: Response) => {
       .request()
       .input('id', sql.UniqueIdentifier, agentId)
       .input('name', sql.NVarChar, name)
-      .input('description', sql.NVarChar, description || null)
-      .input('system_prompt', sql.NVarChar, system_prompt || null)
+      .input('description', sql.NVarChar(sql.MAX), description || null)
+      .input('system_prompt', sql.NVarChar(sql.MAX), system_prompt || null)
       .input('model', sql.NVarChar, model || 'claude-sonnet-4-20250514')
       .input('owner_id', sql.UniqueIdentifier, userId)
       .input('created_at', sql.DateTime2, now)
@@ -151,11 +151,11 @@ router.put('/:id', async (req: Request, res: Response) => {
     }
     if (description !== undefined) {
       setClauses.push('description = @description');
-      request.input('description', sql.NVarChar, description);
+      request.input('description', sql.NVarChar(sql.MAX), description);
     }
     if (system_prompt !== undefined) {
       setClauses.push('system_prompt = @system_prompt');
-      request.input('system_prompt', sql.NVarChar, system_prompt);
+      request.input('system_prompt', sql.NVarChar(sql.MAX), system_prompt);
     }
     if (model !== undefined) {
       setClauses.push('model = @model');
