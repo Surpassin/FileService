@@ -238,6 +238,13 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
 
     return res.json({
       message: {
+        id: userMessageId,
+        conversation_id: req.params.id,
+        role: 'user',
+        content,
+        created_at: now,
+      },
+      reply: {
         id: assistantMessageId,
         conversation_id: req.params.id,
         role: 'assistant',
