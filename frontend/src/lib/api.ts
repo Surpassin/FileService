@@ -91,7 +91,7 @@ class ApiClient {
 
   // Conversations
   async getConversations(agentId: string): Promise<{ conversations: Conversation[] }> {
-    return this.request(`/api/agents/${agentId}/conversations`);
+    return this.request(`/api/conversations?agentId=${agentId}`);
   }
 
   async getConversation(conversationId: string): Promise<{ conversation: Conversation; messages: Message[] }> {
@@ -99,9 +99,9 @@ class ApiClient {
   }
 
   async createConversation(agentId: string, title?: string): Promise<{ conversation: Conversation }> {
-    return this.request(`/api/agents/${agentId}/conversations`, {
+    return this.request('/api/conversations', {
       method: 'POST',
-      body: JSON.stringify({ title: title || 'New Conversation' }),
+      body: JSON.stringify({ agentId, title: title || 'New Conversation' }),
     });
   }
 
