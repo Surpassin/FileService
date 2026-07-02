@@ -216,7 +216,11 @@ export function findCEOSectionBlocks(
   for (let i = dateBlockIdx + 1; i < blocks.length; i++) {
     const content = (blocks[i].content || '').toLowerCase();
 
-    if (blocks[i].type === 'medium_title' && i > dateBlockIdx + 5) {
+    // Stop if we hit the next week's date section
+    if (i > dateBlockIdx + 1 && (() => {
+      const otherContent = blocks[i].content || '';
+      return !otherContent.includes(datePatterns[0]) && /\d{2}\/\d{2}\/\d{4}/.test(otherContent);
+    })()) {
       break;
     }
 
