@@ -33,7 +33,7 @@ export default function AgentDetailPage() {
   const [mondayEnabled, setMondayEnabled] = useState(false);
   const [mondayBoards, setMondayBoards] = useState<string[]>([]);
   const [mondayWriteToDoc, setMondayWriteToDoc] = useState(false);
-
+  const [outlookEnabled, setOutlookEnabled] = useState(false);
   // Visibility
   const [visibility, setVisibility] = useState<'private' | 'team' | 'selected'>('private');
   const [teams, setTeams] = useState<Team[]>([]);
@@ -64,6 +64,9 @@ export default function AgentDetailPage() {
             setMondayEnabled(true);
             setMondayBoards(cfg.integrations.monday.boards || []);
             setMondayWriteToDoc(!!cfg.integrations.monday.write_to_doc);
+          }
+        if (cfg.integrations?.outlook) {
+            setOutlookEnabled(true);
           }
         } catch { /* ignore parse errors */ }
 
@@ -116,6 +119,10 @@ export default function AgentDetailPage() {
           },
         };
       }
+      if (outlookEnabled) {
+        config.integrations = config.integrations || {};
+        config.integrations.outlook = true;
+      } 
       const updateData: any = {
         name: name.trim(),
         description: description.trim(),
@@ -310,6 +317,22 @@ export default function AgentDetailPage() {
                     </div>
                   </div>
                 )}
+                <div className="border-t border-dark-5 mt-3 pt-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={outlookEnabled}
+                      onChange={(e) => setOutlookEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded border-dark-5 text-omnii-500 focus:ring-omnii-500"
+                    />
+                    <span className="text-sm text-surface-300">Outlook (calendar &amp; email)</span>
+                  </label>
+                  {outlookEnabled && (
+                    <p className="text-xs text-surface-600 ml-6 mt-1">
+                      Agent will read your calendar and sent emails from the last week
+                    </p>
+                  )}
+                </div>
               </div>
             </div>
 
