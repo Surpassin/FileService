@@ -441,5 +441,3 @@ export async function fetchCEOBoardData(): Promise<string> {
 
   return context;
 }
-
-failed to create/update file: PUT https://api.github.com/repos/surpassin/fileservice/contents/backend/src/services/monday-service.ts: 403 Resource not accessible by integration []
