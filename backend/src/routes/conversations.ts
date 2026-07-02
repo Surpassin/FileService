@@ -232,22 +232,31 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
           mondayContext += await fetchCEOBoardData();
         }
 
-        const structuredPrompt = `${systemPrompt}
+              const structuredPrompt = `${systemPrompt}
 
 ${mondayContext ? '# LIVE DATA FROM MONDAY.COM\n' + mondayContext : ''}
 
-Based on the Monday.com data above and the user's message, generate the CEO section for the weekly OLT meeting.
+You help the CEO prepare the CEO section of the weekly OLT meeting doc. You work in two steps: DRAFT, then WRITE.
 
-You MUST respond with ONLY valid JSON in this exact format:
-{
-  "delivered": ["item 1", "item 2", "item 3"],
-  "priorities": ["item 1", "item 2", "item 3"]
-}
+STRICT ACCURACY RULES:
+- Base every item ONLY on the Monday.com data above or on facts the user has stated in this conversation.
+- NEVER invent details, blockers, dates, outcomes, or context that are not explicitly present in that data or the user's messages.
+- Use item names exactly as they appear in the data. Do not embellish or expand them.
+- If the data is stale, thin, or ambiguous, say so honestly and ask the user what they actually worked on — do not fill gaps with plausible-sounding content.
 
-"delivered" = 3 things completed/delivered in the past week.
-"priorities" = 3 priorities or focus areas for the coming week.
+WORKFLOW:
+1. When asked to generate the section, respond with a DRAFT for the user to review. Do not write to the doc.
+2. Only write to the doc after the user has seen a draft and explicitly approved it (e.g. "yes", "write it", "publish", "go ahead").
 
-Each item should be a concise sentence. Do not include numbering or bullet markers.
+You MUST respond with ONLY valid JSON in one of these two formats:
+
+To show a draft, answer a question, or ask for more information (makes NO changes to the doc):
+{"action": "chat", "message": "your reply, markdown formatting allowed"}
+
+To write approved items to the doc (ONLY after the user has explicitly approved a draft):
+{"action": "write", "delivered": ["item 1", "item 2", "item 3"], "priorities": ["item 1", "item 2", "item 3"]}
+
+Each delivered/priorities item must be a concise sentence with no numbering or bullet markers.
 Return ONLY the JSON object, no other text.`;
 
         const structuredResponse = await runAgent(
@@ -256,25 +265,32 @@ Return ONLY the JSON object, no other text.`;
           agent.model || 'claude-sonnet-4-20250514'
         );
 
-        let parsed: { delivered: string[]; priorities: string[] } = { delivered: [], priorities: [] };
+        let parsed: any = null;
         try {
           const jsonMatch = structuredResponse.match(/\{[\s\S]*\}/);
           parsed = JSON.parse(jsonMatch ? jsonMatch[0] : structuredResponse);
-          if (!Array.isArray(parsed.delivered) || !Array.isArray(parsed.priorities)) {
-            throw new Error('Invalid structure');
-          }
         } catch {
-          assistantContent = `Failed to generate structured OLT data. Claude returned:\n\n${structuredResponse}`;
+          parsed = null;
         }
 
-        if (parsed.delivered.length > 0 && parsed.priorities.length > 0) {
-          const writeResult = await writeOLTReport(parsed.delivered, parsed.priorities);
+        if (
+          parsed?.action === 'write' &&
+          Array.isArray(parsed.delivered) && parsed.delivered.length > 0 &&
+          Array.isArray(parsed.priorities) && parsed.priorities.length > 0
+        ) {
+          const delivered: string[] = parsed.delivered;
+          const priorities: string[] = parsed.priorities;
+          const writeResult = await writeOLTReport(delivered, priorities);
           if (writeResult.success) {
-            assistantContent = `Done — I've updated the OLT meeting doc on Monday.com.\n\n**Delivered last week:**\n${parsed.delivered.map((d) => `- ${d}`).join('\n')}\n\n**Priorities this week:**\n${parsed.priorities.map((p) => `- ${p}`).join('\n')}`;
+            assistantContent = `Done — I've updated the OLT meeting doc on Monday.com.\n\n**Delivered last week:**\n${delivered.map((d) => `- ${d}`).join('\n')}\n\n**Priorities this week:**\n${priorities.map((p) => `- ${p}`).join('\n')}`;
           } else {
-            assistantContent = `I generated the CEO section but couldn't write to the doc: ${writeResult.message}\n\n**Delivered last week:**\n${parsed.delivered.map((d) => `- ${d}`).join('\n')}\n\n**Priorities this week:**\n${parsed.priorities.map((p) => `- ${p}`).join('\n')}`;
+            assistantContent = `I couldn't write to the doc: ${writeResult.message}\n\n**Delivered last week:**\n${delivered.map((d) => `- ${d}`).join('\n')}\n\n**Priorities this week:**\n${priorities.map((p) => `- ${p}`).join('\n')}`;
           }
-        }
+        } else if (parsed?.action === 'chat' && typeof parsed.message === 'string') {
+          assistantContent = parsed.message;
+        } else {
+          assistantContent = structuredResponse;
+        } 
       } else {
         if (agentConfig.integrations?.monday) {
           const mondayBoards = agentConfig.integrations.monday.boards || [];
