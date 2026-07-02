@@ -442,10 +442,4 @@ export async function fetchCEOBoardData(): Promise<string> {
   return context;
 }
 
-message: Fix Monday.com OLT doc integration: increase docs limit to 500, fix CEO section and sub-heading matching
-owner: surpassin
-path: backend/src/services/monday-service.ts
-repo: fileservice
-sha: 864de6bc473e644ea2371d1c6df15f57546ebe2d
-
 failed to create/update file: PUT https://api.github.com/repos/surpassin/fileservice/contents/backend/src/services/monday-service.ts: 403 Resource not accessible by integration []
