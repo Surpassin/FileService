@@ -1,4 +1,5 @@
-const MONDAY_API_URL = 'https://api.monday.com/v2';
+branch: main
+content: const MONDAY_API_URL = 'https://api.monday.com/v2';
 
 interface MondayItem {
   id: string;
@@ -216,21 +217,22 @@ export function findCEOSectionBlocks(
   for (let i = dateBlockIdx + 1; i < blocks.length; i++) {
     const content = (blocks[i].content || '').toLowerCase();
 
-    // Stop if we hit the next week's date section
-    if (i > dateBlockIdx + 1 && (() => {
+    if (i > dateBlockIdx + 1) {
       const otherContent = blocks[i].content || '';
-      return !otherContent.includes(datePatterns[0]) && /\d{2}\/\d{2}\/\d{4}/.test(otherContent);
-    })()) {
-      break;
+      const hasDatePattern = /\d{2}\/\d{2}\/\d{4}/.test(otherContent);
+      const isCurrentDate = otherContent.includes(datePatterns[0]);
+      if (hasDatePattern && !isCurrentDate) {
+        break;
+      }
     }
 
-    if (content.includes('8.') && content.includes('ceo')) {
+    if (content.includes('ceo') && !content.includes('delivered') && !content.includes('priority')) {
       for (let j = i + 1; j < blocks.length && j < i + 10; j++) {
         const subContent = (blocks[j].content || '').toLowerCase();
-        if (!deliveredBlockId && (subContent.includes('delivered') || subContent.includes('a.'))) {
+        if (!deliveredBlockId && subContent.includes('delivered')) {
           deliveredBlockId = blocks[j].id;
         }
-        if (subContent.includes('priority') || subContent.includes('b.')) {
+        if (subContent.includes('priority')) {
           prioritiesBlockId = blocks[j].id;
           break;
         }
@@ -278,7 +280,7 @@ async function findCurrentOLTDoc(): Promise<{ id: number; name: string } | null>
 
   const query = `
     query {
-      docs(limit: 50) {
+      docs(limit: 500) {
         id
         name
       }
@@ -296,7 +298,6 @@ async function findCurrentOLTDoc(): Promise<{ id: number; name: string } | null>
     return { id: Number(match.id), name: match.name };
   }
 
-  // If meeting falls near month boundary, also check next month's doc
   const nextMonth = new Date(now);
   nextMonth.setMonth(now.getMonth() + 1);
   const nextMonthName = MONTH_NAMES[nextMonth.getMonth()];
@@ -440,3 +441,11 @@ export async function fetchCEOBoardData(): Promise<string> {
 
   return context;
 }
+
+message: Fix Monday.com OLT doc integration: increase docs limit to 500, fix CEO section and sub-heading matching
+owner: surpassin
+path: backend/src/services/monday-service.ts
+repo: fileservice
+sha: 864de6bc473e644ea2371d1c6df15f57546ebe2d
+
+failed to create/update file: PUT https://api.github.com/repos/surpassin/fileservice/contents/backend/src/services/monday-service.ts: 403 Resource not accessible by integration []
