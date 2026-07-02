@@ -5,6 +5,7 @@ import { getPool } from '../config/database';
 import { authenticate } from '../middleware/auth';
 import { runAgent } from '../services/agent-service';
 import { fetchOLTData, fetchCEOBoardData, writeOLTReport } from '../services/monday-service';
+import { fetchOutlookData } from '../services/outlook-service';
 
 const router = Router();
 
@@ -231,15 +232,18 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
         if (mondayBoards.includes('ceo')) {
           mondayContext += await fetchCEOBoardData();
         }
+        if (agentConfig.integrations?.outlook) {
+          mondayContext += await fetchOutlookData();
+        }
 
-              const structuredPrompt = `${systemPrompt}
+        const structuredPrompt = `${systemPrompt}
 
-${mondayContext ? '# LIVE DATA FROM MONDAY.COM\n' + mondayContext : ''}
+${mondayContext ? '# LIVE DATA FROM MONDAY.COM AND OUTLOOK\n' + mondayContext : ''}
 
 You help the CEO prepare the CEO section of the weekly OLT meeting doc. You work in two steps: DRAFT, then WRITE.
 
 STRICT ACCURACY RULES:
-- Base every item ONLY on the Monday.com data above or on facts the user has stated in this conversation.
+- Base every item ONLY on the data above (Monday.com boards, Outlook calendar and emails) or on facts the user has stated in this conversation.
 - NEVER invent details, blockers, dates, outcomes, or context that are not explicitly present in that data or the user's messages.
 - Use item names exactly as they appear in the data. Do not embellish or expand them.
 - If the data is stale, thin, or ambiguous, say so honestly and ask the user what they actually worked on — do not fill gaps with plausible-sounding content.
@@ -290,7 +294,7 @@ Return ONLY the JSON object, no other text.`;
           assistantContent = parsed.message;
         } else {
           assistantContent = structuredResponse;
-        } 
+        }
       } else {
         if (agentConfig.integrations?.monday) {
           const mondayBoards = agentConfig.integrations.monday.boards || [];
@@ -300,6 +304,9 @@ Return ONLY the JSON object, no other text.`;
           }
           if (mondayBoards.includes('ceo')) {
             mondayContext += await fetchCEOBoardData();
+          }
+          if (agentConfig.integrations?.outlook) {
+            mondayContext += await fetchOutlookData();
           }
           if (mondayContext) {
             systemPrompt += '\n\n---\n\n# LIVE DATA FROM MONDAY.COM\n' + mondayContext;
