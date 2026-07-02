@@ -1,4 +1,3 @@
-branch: main
 content: const MONDAY_API_URL = 'https://api.monday.com/v2';
 
 interface MondayItem {
