@@ -4,7 +4,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { getPool } from '../config/database';
 import { authenticate } from '../middleware/auth';
 import { runAgent } from '../services/agent-service';
-import { fetchOLTData, fetchCEOBoardData } from '../services/monday-service';
+import { fetchOLTData, fetchCEOBoardData, writeOLTReport } from '../services/monday-service';
 
 const router = Router();
 
@@ -92,7 +92,7 @@ router.post('/', async (req: Request, res: Response) => {
     const pool = await getPool();
     const userId = (req as any).user.userId;
 
-    // Verify agent access (owner or team member)
+    // Verify agent access
     const agentResult = await pool
       .request()
       .input('id', sql.UniqueIdentifier, agentId)
@@ -100,7 +100,10 @@ router.post('/', async (req: Request, res: Response) => {
       .query(
         `SELECT id FROM agents WHERE id = @id
          AND (owner_id = @user_id
-              OR team_id IN (SELECT team_id FROM team_members WHERE user_id = @user_id))`
+              OR (visibility = 'team'
+                  AND team_id IN (SELECT team_id FROM team_members WHERE user_id = @user_id))
+              OR (visibility = 'selected'
+                  AND id IN (SELECT agent_id FROM agent_access WHERE user_id = @user_id)))`
       );
 
     if (agentResult.recordset.length === 0) {
@@ -214,31 +217,89 @@ router.post('/:id/messages', async (req: Request, res: Response) => {
 
     // Fetch integration data if configured
     let systemPrompt = agent.system_prompt || 'You are a helpful assistant.';
+    let assistantContent: string = 'No response generated.';
+
     try {
       const agentConfig = JSON.parse(agent.config || '{}');
-      if (agentConfig.integrations?.monday) {
-        const mondayBoards = agentConfig.integrations.monday.boards || [];
+
+      if (agentConfig.integrations?.monday?.write_to_doc) {
         let mondayContext = '';
+        const mondayBoards = agentConfig.integrations.monday.boards || [];
         if (mondayBoards.includes('olt_actions')) {
           mondayContext += await fetchOLTData();
         }
         if (mondayBoards.includes('ceo')) {
           mondayContext += await fetchCEOBoardData();
         }
-        if (mondayContext) {
-          systemPrompt += '\n\n---\n\n# LIVE DATA FROM MONDAY.COM\n' + mondayContext;
+
+        const structuredPrompt = `${systemPrompt}
+
+${mondayContext ? '# LIVE DATA FROM MONDAY.COM\n' + mondayContext : ''}
+
+Based on the Monday.com data above and the user's message, generate the CEO section for the weekly OLT meeting.
+
+You MUST respond with ONLY valid JSON in this exact format:
+{
+  "delivered": ["item 1", "item 2", "item 3"],
+  "priorities": ["item 1", "item 2", "item 3"]
+}
+
+"delivered" = 3 things completed/delivered in the past week.
+"priorities" = 3 priorities or focus areas for the coming week.
+
+Each item should be a concise sentence. Do not include numbering or bullet markers.
+Return ONLY the JSON object, no other text.`;
+
+        const structuredResponse = await runAgent(
+          structuredPrompt,
+          messages,
+          agent.model || 'claude-sonnet-4-20250514'
+        );
+
+        let parsed: { delivered: string[]; priorities: string[] } = { delivered: [], priorities: [] };
+        try {
+          const jsonMatch = structuredResponse.match(/\{[\s\S]*\}/);
+          parsed = JSON.parse(jsonMatch ? jsonMatch[0] : structuredResponse);
+          if (!Array.isArray(parsed.delivered) || !Array.isArray(parsed.priorities)) {
+            throw new Error('Invalid structure');
+          }
+        } catch {
+          assistantContent = `Failed to generate structured OLT data. Claude returned:\n\n${structuredResponse}`;
         }
+
+        if (parsed.delivered.length > 0 && parsed.priorities.length > 0) {
+          const writeResult = await writeOLTReport(parsed.delivered, parsed.priorities);
+          if (writeResult.success) {
+            assistantContent = `Done — I've updated the OLT meeting doc on Monday.com.\n\n**Delivered last week:**\n${parsed.delivered.map((d) => `- ${d}`).join('\n')}\n\n**Priorities this week:**\n${parsed.priorities.map((p) => `- ${p}`).join('\n')}`;
+          } else {
+            assistantContent = `I generated the CEO section but couldn't write to the doc: ${writeResult.message}\n\n**Delivered last week:**\n${parsed.delivered.map((d) => `- ${d}`).join('\n')}\n\n**Priorities this week:**\n${parsed.priorities.map((p) => `- ${p}`).join('\n')}`;
+          }
+        }
+      } else {
+        if (agentConfig.integrations?.monday) {
+          const mondayBoards = agentConfig.integrations.monday.boards || [];
+          let mondayContext = '';
+          if (mondayBoards.includes('olt_actions')) {
+            mondayContext += await fetchOLTData();
+          }
+          if (mondayBoards.includes('ceo')) {
+            mondayContext += await fetchCEOBoardData();
+          }
+          if (mondayContext) {
+            systemPrompt += '\n\n---\n\n# LIVE DATA FROM MONDAY.COM\n' + mondayContext;
+          }
+        }
+
+        assistantContent = await runAgent(
+          systemPrompt,
+          messages,
+          agent.model || 'claude-sonnet-4-20250514'
+        );
       }
     } catch (integrationErr: any) {
-      console.error('Integration data fetch error:', integrationErr.message);
+      console.error('Integration/agent error:', integrationErr.message);
+      assistantContent = `Error: ${integrationErr.message}`;
     }
-
-    // Call Claude API
-    const assistantContent = await runAgent(
-      systemPrompt,
-      messages,
-      agent.model || 'claude-sonnet-4-20250514'
-    );
 
     // Insert assistant message
     const assistantMessageId = uuidv4();

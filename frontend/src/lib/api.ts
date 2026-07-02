@@ -78,7 +78,7 @@ class ApiClient {
 
   async updateAgent(
     id: string,
-    data: Partial<{ name: string; description: string; system_prompt: string; model: string; status: string }>
+    data: Partial<{ name: string; description: string; system_prompt: string; model: string; status: string; config: string }>
   ): Promise<{ agent: Agent }> {
     return this.request(`/api/agents/${id}`, {
       method: 'PUT',
@@ -88,6 +88,10 @@ class ApiClient {
 
   async deleteAgent(id: string): Promise<void> {
     return this.request(`/api/agents/${id}`, { method: 'DELETE' });
+  }
+
+  async getAgentAccess(agentId: string): Promise<{ access: { user_id: string; name: string; email: string }[] }> {
+    return this.request(`/api/agents/${agentId}/access`);
   }
 
   // Conversations
