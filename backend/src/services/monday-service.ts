@@ -6,7 +6,7 @@ interface MondayItem {
   group: { title: string };
   column_values: {
     id: string;
-    title: string;
+    column: { title: string };
     text: string;
     value: string | null;
   }[];
@@ -70,7 +70,7 @@ export async function fetchOLTData(userId?: string): Promise<string> {
             updated_at
             column_values {
               id
-              title
+              column { title }
               text
               value
             }
@@ -91,7 +91,7 @@ export async function fetchOLTData(userId?: string): Promise<string> {
     const cols: Record<string, string> = {};
     item.column_values.forEach((cv) => {
       if (cv.text) {
-        cols[cv.title] = cv.text;
+        cols[cv.column.title] = cv.text;
       }
     });
 
@@ -384,7 +384,7 @@ export async function fetchCEOBoardData(): Promise<string> {
             updated_at
             column_values {
               id
-              title
+              column { title }
               text
               value
             }
@@ -401,7 +401,7 @@ export async function fetchCEOBoardData(): Promise<string> {
     const cols: Record<string, string> = {};
     item.column_values.forEach((cv) => {
       if (cv.text) {
-        cols[cv.title] = cv.text;
+        cols[cv.column.title] = cv.text;
       }
     });
 
