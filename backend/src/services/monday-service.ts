@@ -39,7 +39,7 @@ async function mondayQuery(query: string, variables?: Record<string, any>): Prom
     headers: {
       'Content-Type': 'application/json',
       'Authorization': token,
-      'API-Version': '2024-10',
+      'API-Version': '2025-10',
     },
     body: JSON.stringify({ query, variables }),
   });
