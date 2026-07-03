@@ -84,25 +84,52 @@ function daxEscape(value: string): string {
   return value.replace(/"/g, '""');
 }
 
-export async function findMatchingClients(searchTerm: string): Promise<string[]> {
-  const term = daxEscape(searchTerm.trim());
+async function searchClientNames(term: string): Promise<string[]> {
+  const escaped = daxEscape(term.trim());
   const query = `
     EVALUATE
     SELECTCOLUMNS(
       FILTER(
         DISTINCT(SELECTCOLUMNS('${METADATA_TABLE}', "ClientName", '${METADATA_TABLE}'[Client])),
-        NOT(ISBLANK([ClientName])) && SEARCH("${term}", [ClientName], 1, 0) > 0
+        NOT(ISBLANK([ClientName])) && SEARCH("${escaped}", [ClientName], 1, 0) > 0
       ),
       "ClientName", [ClientName]
     )
   `;
 
   const rows = await executeDax(query);
-  return rows.map((r: any) => r['[ClientName]']).filter(Boolean).slice(0, 10);
+  return rows.map((r: any) => r['[ClientName]']).filter(Boolean);
+}
+
+export async function findMatchingClients(
+  searchTerm: string
+): Promise<{ term: string; matches: string[] }> {
+  const phrase = searchTerm.trim();
+
+  // Try progressively looser searches: full phrase first, then the most
+  // distinctive words, including singular forms (Hutchinsons -> Hutchinson)
+  const attempts: string[] = [phrase];
+  const words = phrase
+    .split(/\s+/)
+    .filter((w) => w.length > 3)
+    .sort((a, b) => b.length - a.length);
+  for (const w of words) {
+    attempts.push(w);
+    if (w.toLowerCase().endsWith('s')) attempts.push(w.slice(0, -1));
+  }
+
+  for (const attempt of attempts) {
+    const matches = await searchClientNames(attempt);
+    if (matches.length > 0) {
+      return { term: attempt, matches };
+    }
+  }
+
+  return { term: phrase, matches: [] };
 }
 
 export async function fetchClientBidData(clientName: string): Promise<string> {
-  const exactMatches = await findMatchingClients(clientName);
+  const { term, matches: exactMatches } = await findMatchingClients(clientName);
 
   if (exactMatches.length === 0) {
     return `\n## POWER BI CLIENT DATA\nNo client matching "${clientName}" was found in the Bid Conversion dataset. The name may be spelled differently in Deltek PIM — ask the user to check the exact client name.\n`;
@@ -110,6 +137,31 @@ export async function fetchClientBidData(clientName: string): Promise<string> {
 
   let context = `\n## POWER BI CLIENT DATA (Bid Conversion Report — Deltek PIM)\n`;
   context += `Search term: "${clientName}" — ${exactMatches.length} matching client name(s) found.\n`;
+
+  // Many large clients are split across branch entities in PIM. When more
+  // than one entity matches, give the combined group record first.
+  if (exactMatches.length > 1) {
+    const t = daxEscape(term);
+    const combinedQuery = `
+      EVALUATE
+      ROW(
+        "Bids", CALCULATE(SUM('${METADATA_TABLE}'[Bid Submitted]), FILTER('${METADATA_TABLE}', SEARCH("${t}", '${METADATA_TABLE}'[Client], 1, 0) > 0)),
+        "Wins", CALCULATE(SUM('${METADATA_TABLE}'[Project Won]), FILTER('${METADATA_TABLE}', SEARCH("${t}", '${METADATA_TABLE}'[Client], 1, 0) > 0)),
+        "TotalFees", CALCULATE(SUM('${METADATA_TABLE}'[Total Project Fee]), FILTER('${METADATA_TABLE}', SEARCH("${t}", '${METADATA_TABLE}'[Client], 1, 0) > 0)),
+        "WinValue", CALCULATE(SUM('${METADATA_TABLE}'[Win Value]), FILTER('${METADATA_TABLE}', SEARCH("${t}", '${METADATA_TABLE}'[Client], 1, 0) > 0))
+      )
+    `;
+    const combinedRows = await executeDax(combinedQuery);
+    const cb = combinedRows[0] || {};
+    const cBids = cb['[Bids]'] || 0;
+    const cWins = cb['[Wins]'] || 0;
+    const cConv = cBids > 0 ? ((100 * cWins) / cBids).toFixed(1) + '%' : 'n/a';
+    context += `\n### COMBINED GROUP RECORD (all ${exactMatches.length} matching entities)\n`;
+    context += `- Bids submitted: ${cBids}\n- Bids won: ${cWins}\n- Conversion rate: ${cConv}\n`;
+    context += `- Total fees bid: $${Number(cb['[TotalFees]'] || 0).toLocaleString()}\n`;
+    context += `- Total win value: $${Number(cb['[WinValue]'] || 0).toLocaleString()}\n`;
+    context += `Use this combined record for the client-level framework scoring unless the user specifies a particular entity.\n`;
+  }
 
   // Limit detailed stats to the first 3 matches to keep context manageable
   for (const client of exactMatches.slice(0, 3)) {
