@@ -6,7 +6,7 @@ import { authenticate } from '../middleware/auth';
 import { runAgent } from '../services/agent-service';
 import { fetchOLTData, fetchCEOBoardData, writeOLTReport } from '../services/monday-service';
 import { fetchOutlookData } from '../services/outlook-service';
-
+import { fetchClientBidData } from '../services/powerbi-service';
 const router = Router();
 
 // All routes require authentication
@@ -295,6 +295,39 @@ Return ONLY the JSON object, no other text.`;
         } else {
           assistantContent = structuredResponse;
         }
+        } else if (agentConfig.integrations?.powerbi_bid) {
+        // Step 1: identify which client the user is asking about
+        const extractResponse = await runAgent(
+          'Identify the client company the user wants a bid/no-bid assessment for, based on the conversation. Respond with ONLY valid JSON: {"client": "company name"} if a client has been named, or {"client": null} if no specific client has been mentioned yet. Return ONLY the JSON object.',
+          messages,
+          agent.model || 'claude-sonnet-4-20250514'
+        );
+
+        let clientName: string | null = null;
+        try {
+          const m = extractResponse.match(/\{[\s\S]*\}/);
+          const extracted = JSON.parse(m ? m[0] : extractResponse);
+          if (extracted.client && typeof extracted.client === 'string') {
+            clientName = extracted.client;
+          }
+        } catch { /* no client identified */ }
+
+        // Step 2: pull live client data from Power BI, then answer
+        let bidContext = '';
+        if (clientName) {
+          bidContext = await fetchClientBidData(clientName);
+        }
+
+        const finalPrompt = `${systemPrompt}
+${bidContext
+  ? '\n---\n' + bidContext + '\nSTRICT ACCURACY RULES: score the framework using ONLY the live figures above and facts the user has stated. NEVER invent numbers, history, or client details not present in that data. If a figure needed for scoring is missing, say so and ask the user.'
+  : '\n---\nNo client has been identified in the conversation yet, or no data could be fetched. If the user wants a bid/no-bid assessment, ask which client the opportunity is for. Do not invent client data.'}`;
+
+        assistantContent = await runAgent(
+          finalPrompt,
+          messages,
+          agent.model || 'claude-sonnet-4-20250514'
+        );
       } else {
         if (agentConfig.integrations?.monday) {
           const mondayBoards = agentConfig.integrations.monday.boards || [];
