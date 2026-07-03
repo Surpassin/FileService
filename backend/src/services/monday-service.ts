@@ -166,21 +166,32 @@ export async function fetchOLTData(userId?: string): Promise<string> {
 }
 
 export async function readDocBlocks(docId: string): Promise<any[]> {
-  const query = `
-    query {
-      docs(ids: [${docId}]) {
-        blocks {
-          id
-          type
-          content
-          parent_block_id
+  let allBlocks: any[] = [];
+  let page = 1;
+
+  while (page <= 10) {
+    const query = `
+      query {
+        docs(ids: [${docId}]) {
+          blocks(limit: 100, page: ${page}) {
+            id
+            type
+            content
+            parent_block_id
+          }
         }
       }
-    }
-  `;
+    `;
 
-  const result = await mondayQuery(query);
-  return result.data?.docs?.[0]?.blocks || [];
+    const result = await mondayQuery(query);
+    const blocks = result.data?.docs?.[0]?.blocks || [];
+    allBlocks = allBlocks.concat(blocks);
+
+    if (blocks.length < 100) break;
+    page++;
+  }
+
+  return allBlocks;
 }
 
 export function findCEOSectionBlocks(
