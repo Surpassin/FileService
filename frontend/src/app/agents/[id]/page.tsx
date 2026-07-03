@@ -34,6 +34,7 @@ export default function AgentDetailPage() {
   const [mondayBoards, setMondayBoards] = useState<string[]>([]);
   const [mondayWriteToDoc, setMondayWriteToDoc] = useState(false);
   const [outlookEnabled, setOutlookEnabled] = useState(false);
+  const [powerbiBidEnabled, setPowerbiBidEnabled] = useState(false);
   // Visibility
   const [visibility, setVisibility] = useState<'private' | 'team' | 'selected'>('private');
   const [teams, setTeams] = useState<Team[]>([]);
@@ -68,6 +69,9 @@ export default function AgentDetailPage() {
         if (cfg.integrations?.outlook) {
             setOutlookEnabled(true);
           }
+        if (cfg.integrations?.powerbi_bid) {
+            setPowerbiBidEnabled(true);
+          }  
         } catch { /* ignore parse errors */ }
 
         const convs = convData.conversations || [];
@@ -118,6 +122,10 @@ export default function AgentDetailPage() {
             ...(mondayWriteToDoc ? { write_to_doc: true } : {}),
           },
         };
+      }
+      if (powerbiBidEnabled) {
+        config.integrations = config.integrations || {};
+        config.integrations.powerbi_bid = true;
       }
       if (outlookEnabled) {
         config.integrations = config.integrations || {};
@@ -332,6 +340,22 @@ export default function AgentDetailPage() {
                       Agent will read your calendar and sent emails from the last week
                     </p>
                   )}
+                  <div className="border-t border-dark-5 mt-3 pt-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={powerbiBidEnabled}
+                      onChange={(e) => setPowerbiBidEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded border-dark-5 text-omnii-500 focus:ring-omnii-500"
+                    />
+                    <span className="text-sm text-surface-300">Power BI (client bid data)</span>
+                  </label>
+                  {powerbiBidEnabled && (
+                    <p className="text-xs text-surface-600 ml-6 mt-1">
+                      Agent will look up client conversion and profit data from the Bid Conversion Report
+                    </p>
+                  )}
+                </div>
                 </div>
               </div>
             </div>
