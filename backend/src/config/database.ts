@@ -167,4 +167,16 @@ export async function initializeDatabase(): Promise<void> {
     IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('audit_log') AND name = 'entity_id')
     ALTER TABLE audit_log ADD entity_id UNIQUEIDENTIFIER NULL
   `);
+  
+  // OAuth token storage for external integrations (e.g. Canva)
+  await db.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'integration_tokens')
+    CREATE TABLE integration_tokens (
+      provider NVARCHAR(50) PRIMARY KEY,
+      access_token NVARCHAR(MAX) NOT NULL,
+      refresh_token NVARCHAR(MAX) NOT NULL,
+      expires_at DATETIME2 NOT NULL,
+      updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+    )
+  `);
 }
