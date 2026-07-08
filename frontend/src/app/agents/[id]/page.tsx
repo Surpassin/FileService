@@ -35,6 +35,7 @@ export default function AgentDetailPage() {
   const [mondayWriteToDoc, setMondayWriteToDoc] = useState(false);
   const [outlookEnabled, setOutlookEnabled] = useState(false);
   const [powerbiBidEnabled, setPowerbiBidEnabled] = useState(false);
+  const [canvaImageEnabled, setCanvaImageEnabled] = useState(false);
   // Visibility
   const [visibility, setVisibility] = useState<'private' | 'team' | 'selected'>('private');
   const [teams, setTeams] = useState<Team[]>([]);
@@ -72,6 +73,9 @@ export default function AgentDetailPage() {
         if (cfg.integrations?.powerbi_bid) {
             setPowerbiBidEnabled(true);
           }  
+        if (cfg.integrations?.canva_image) {
+            setCanvaImageEnabled(true);
+          }
         } catch { /* ignore parse errors */ }
 
         const convs = convData.conversations || [];
@@ -126,6 +130,10 @@ export default function AgentDetailPage() {
       if (powerbiBidEnabled) {
         config.integrations = config.integrations || {};
         config.integrations.powerbi_bid = true;
+      }
+      if (canvaImageEnabled) {
+        config.integrations = config.integrations || {};
+        config.integrations.canva_image = true;
       }
       if (outlookEnabled) {
         config.integrations = config.integrations || {};
@@ -355,6 +363,14 @@ export default function AgentDetailPage() {
                       Agent will look up client conversion and profit data from the Bid Conversion Report
                     </p>
                   )}
+                  )}          ← line 365
+                </div>        ← line 366 (end of the Power BI box)
+                <div className="border-t border-dark-5 mt-3 pt-3">   ← paste starts
+                  ... Canva checkbox ...
+                </div>        ← paste ends
+                </div>        ← was line 367
+              </div>          ← was line 368
+            </div>            ← was line 369
                 </div>
                 </div>
               </div>
