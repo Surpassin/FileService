@@ -7,6 +7,7 @@ import { runAgent } from '../services/agent-service';
 import { fetchOLTData, fetchCEOBoardData, writeOLTReport } from '../services/monday-service';
 import { fetchOutlookData } from '../services/outlook-service';
 import { fetchClientBidData } from '../services/powerbi-service';
+import { generateLinkedInImage } from '../services/canva-service';
 const router = Router();
 
 // All routes require authentication
@@ -328,6 +329,48 @@ ${bidContext
           messages,
           agent.model || 'claude-sonnet-4-20250514'
         );
+            } else if (agentConfig.integrations?.canva_image) {
+        const canvaPrompt = `${systemPrompt}
+
+You also produce an on-brand image (generated via Canva) with every finished LinkedIn post. The image displays a short headline in large text.
+
+You MUST respond with ONLY valid JSON in one of these two formats:
+
+To reply conversationally, ask for missing information, or discuss ideas (no post yet):
+{"action": "chat", "message": "your reply, markdown formatting allowed"}
+
+When delivering a finished LinkedIn post:
+{"action": "post", "copy": "the complete LinkedIn post text, ready to publish", "headline": "5-10 punchy words to appear IN the image", "subtext": "one short supporting line for the image, or an empty string"}
+
+ACCURACY RULES: base posts ONLY on facts the user has provided. NEVER invent project details, client names, statistics or achievements. If a key fact is missing, use action "chat" to ask for it.
+Return ONLY the JSON object, no other text.`;
+
+        const canvaResponse = await runAgent(
+          canvaPrompt,
+          messages,
+          agent.model || 'claude-sonnet-4-20250514'
+        );
+
+        let parsedPost: any = null;
+        try {
+          const m = canvaResponse.match(/\{[\s\S]*\}/);
+          parsedPost = JSON.parse(m ? m[0] : canvaResponse);
+        } catch {
+          parsedPost = null;
+        }
+
+        if (parsedPost?.action === 'post' && typeof parsedPost.copy === 'string' && typeof parsedPost.headline === 'string') {
+          try {
+            const imageUrl = await generateLinkedInImage(parsedPost.headline, parsedPost.subtext || '');
+            assistantContent = `${parsedPost.copy}\n\n![LinkedIn graphic](${imageUrl})\n\n_Image headline: "${parsedPost.headline}" — the image link expires within 24 hours, so download it soon._`;
+          } catch (imageErr: any) {
+            assistantContent = `${parsedPost.copy}\n\n⚠️ I wrote the post but couldn't generate the image: ${imageErr.message}`;
+          }
+        } else if (parsedPost?.action === 'chat' && typeof parsedPost.message === 'string') {
+          assistantContent = parsedPost.message;
+        } else {
+          assistantContent = canvaResponse;
+        }
       } else {
         if (agentConfig.integrations?.monday) {
           const mondayBoards = agentConfig.integrations.monday.boards || [];
