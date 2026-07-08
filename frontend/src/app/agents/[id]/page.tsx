@@ -363,14 +363,22 @@ export default function AgentDetailPage() {
                       Agent will look up client conversion and profit data from the Bid Conversion Report
                     </p>
                   )}
-                  )}          ← line 365
-                </div>        ← line 366 (end of the Power BI box)
-                <div className="border-t border-dark-5 mt-3 pt-3">   ← paste starts
-                  ... Canva checkbox ...
-                </div>        ← paste ends
-                </div>        ← was line 367
-              </div>          ← was line 368
-            </div>            ← was line 369
+                <div className="border-t border-dark-5 mt-3 pt-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={canvaImageEnabled}
+                      onChange={(e) => setCanvaImageEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded border-dark-5 text-omnii-500 focus:ring-omnii-500"
+                    />
+                    <span className="text-sm text-surface-300">Canva images (LinkedIn graphics)</span>
+                  </label>
+                  {canvaImageEnabled && (
+                    <p className="text-xs text-surface-600 ml-6 mt-1">
+                      Agent will generate an on-brand image from the Omnii Canva template with every post
+                    </p>
+                  )}
+                </div>
                 </div>
                 </div>
               </div>
