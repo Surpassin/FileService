@@ -3,7 +3,8 @@ import sql from 'mssql';
 import { v4 as uuidv4 } from 'uuid';
 import { getPool } from '../config/database';
 import { authenticate } from '../middleware/auth';
-import { runAgent } from '../services/agent-service';
+import { runAgent, runAgentWithDocument } from '../services/agent-service';
+import { CONTRACT_REVIEW_PROMPT } from '../prompts/contract-review';
 import { fetchOLTData, fetchCEOBoardData, writeOLTReport } from '../services/monday-service';
 import { fetchOutlookData } from '../services/outlook-service';
 import { fetchClientBidData } from '../services/powerbi-service';
@@ -140,6 +141,80 @@ router.post('/', async (req: Request, res: Response) => {
     });
   } catch (error: any) {
     console.error('Create conversation error:', error);
+    return res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// POST /:id/contract — attach a contract PDF to the conversation for review
+router.post('/:id/contract', async (req: Request, res: Response) => {
+  try {
+    const { filename, data } = req.body;
+
+    if (!filename || !data) {
+      return res.status(400).json({ error: 'filename and data are required' });
+    }
+    if (!filename.toLowerCase().endsWith('.pdf')) {
+      return res.status(400).json({ error: 'Only PDF files are supported. Save Word contracts as PDF first.' });
+    }
+    // ~20 MB PDF limit (base64 is ~33% larger than the file)
+    if (typeof data !== 'string' || data.length > 28 * 1024 * 1024) {
+      return res.status(400).json({ error: 'File too large. Contracts up to ~20 MB are supported.' });
+    }
+
+    const pool = await getPool();
+    const userId = (req as any).user.userId;
+
+    const convResult = await pool
+      .request()
+      .input('id', sql.UniqueIdentifier, req.params.id)
+      .input('user_id', sql.UniqueIdentifier, userId)
+      .query('SELECT id FROM conversations WHERE id = @id AND user_id = @user_id');
+
+    if (convResult.recordset.length === 0) {
+      return res.status(404).json({ error: 'Conversation not found' });
+    }
+
+    const docId = uuidv4();
+    await pool
+      .request()
+      .input('id', sql.UniqueIdentifier, docId)
+      .input('conversation_id', sql.UniqueIdentifier, req.params.id)
+      .input('filename', sql.NVarChar, filename)
+      .input('media_type', sql.NVarChar, 'application/pdf')
+      .input('content_base64', sql.NVarChar(sql.MAX), data)
+      .input('uploaded_by', sql.UniqueIdentifier, userId)
+      .query(
+        `INSERT INTO contract_documents (id, conversation_id, filename, media_type, content_base64, uploaded_by)
+         VALUES (@id, @conversation_id, @filename, @media_type, @content_base64, @uploaded_by)`
+      );
+
+    // Record the attachment in the conversation history so it persists
+    const messageId = uuidv4();
+    const now = new Date();
+    await pool
+      .request()
+      .input('id', sql.UniqueIdentifier, messageId)
+      .input('conversation_id', sql.UniqueIdentifier, req.params.id)
+      .input('role', sql.NVarChar, 'user')
+      .input('content', sql.NVarChar(sql.MAX), `📎 Attached contract: ${filename}`)
+      .input('created_at', sql.DateTime2, now)
+      .query(
+        `INSERT INTO messages (id, conversation_id, role, content, created_at)
+         VALUES (@id, @conversation_id, @role, @content, @created_at)`
+      );
+
+    return res.status(201).json({
+      document: { id: docId, filename },
+      message: {
+        id: messageId,
+        conversation_id: req.params.id,
+        role: 'user',
+        content: `📎 Attached contract: ${filename}`,
+        created_at: now,
+      },
+    });
+  } catch (error: any) {
+    console.error('Contract upload error:', error);
     return res.status(500).json({ error: 'Internal server error' });
   }
 });
@@ -329,7 +404,36 @@ ${bidContext
           messages,
           agent.model || 'claude-sonnet-4-20250514'
         );
-            } else if (agentConfig.integrations?.canva_image) {
+            } else if (agentConfig.integrations?.contract_review) {
+        // Load the most recent contract attached to this conversation
+        const docResult = await pool
+          .request()
+          .input('conversation_id', sql.UniqueIdentifier, req.params.id)
+          .query(
+            `SELECT TOP 1 filename, content_base64 FROM contract_documents
+             WHERE conversation_id = @conversation_id
+             ORDER BY uploaded_at DESC`
+          );
+
+        const reviewPrompt = `${systemPrompt}\n\n${CONTRACT_REVIEW_PROMPT}`;
+
+        if (docResult.recordset.length === 0) {
+          assistantContent = await runAgent(
+            reviewPrompt,
+            messages,
+            agent.model || 'claude-sonnet-4-20250514'
+          );
+        } else {
+          const doc = docResult.recordset[0];
+          assistantContent = await runAgentWithDocument(
+            reviewPrompt,
+            messages,
+            agent.model || 'claude-sonnet-4-20250514',
+            doc.content_base64,
+            doc.filename
+          );
+        }
+      } else if (agentConfig.integrations?.canva_image) {
         const canvaPrompt = `${systemPrompt}
 
 You also produce an on-brand image (generated via Canva) with every finished LinkedIn post. The image displays a short headline in large text.
