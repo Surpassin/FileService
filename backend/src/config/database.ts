@@ -179,4 +179,36 @@ export async function initializeDatabase(): Promise<void> {
       updated_at DATETIME2 NOT NULL DEFAULT GETUTCDATE()
     )
   `);
+
+  // Uploaded documents (e.g. contracts for review), stored per conversation
+  await db.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'contract_documents')
+    CREATE TABLE contract_documents (
+      id UNIQUEIDENTIFIER PRIMARY KEY DEFAULT NEWID(),
+      conversation_id UNIQUEIDENTIFIER NOT NULL REFERENCES conversations(id),
+      filename NVARCHAR(500) NOT NULL,
+      media_type NVARCHAR(100) NOT NULL,
+      content_base64 NVARCHAR(MAX) NOT NULL,
+      uploaded_by UNIQUEIDENTIFIER NOT NULL REFERENCES users(id),
+      uploaded_at DATETIME2 NOT NULL DEFAULT GETUTCDATE()
+    )
+  `);
+
+  await cleanupExpiredDocuments();
+}
+
+// Retention policy: uploaded contracts are kept for 90 days, then removed
+export async function cleanupExpiredDocuments(): Promise<void> {
+  try {
+    const db = await getPool();
+    const result = await db.request().query(
+      `DELETE FROM contract_documents WHERE uploaded_at < DATEADD(day, -90, GETUTCDATE())`
+    );
+    const removed = result.rowsAffected?.[0] || 0;
+    if (removed > 0) {
+      console.log(`Document retention: removed ${removed} contract(s) older than 90 days`);
+    }
+  } catch (err: any) {
+    console.error('Document retention cleanup failed:', err.message);
+  }
 }
