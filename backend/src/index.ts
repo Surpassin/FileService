@@ -17,7 +17,7 @@ app.use(cors({
   credentials: true,
 }));
 
-app.use(express.json({ limit: '10mb' }));
+app.use(express.json({ limit: '30mb' }));
 
 app.use(rateLimit({
   windowMs: 15 * 60 * 1000,
