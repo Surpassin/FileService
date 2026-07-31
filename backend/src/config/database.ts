@@ -20,6 +20,9 @@ function parseConnectionString(connStr: string): sql.config {
       encrypt: parts['encrypt']?.toLowerCase() !== 'false',
       trustServerCertificate: parts['trustservercertificate']?.toLowerCase() === 'true',
     },
+    // Large writes (e.g. contract PDFs) need more than the 15s default
+    requestTimeout: 120000,
+    connectionTimeout: 30000,
   };
 }
 
@@ -192,6 +195,11 @@ export async function initializeDatabase(): Promise<void> {
       uploaded_by UNIQUEIDENTIFIER NOT NULL REFERENCES users(id),
       uploaded_at DATETIME2 NOT NULL DEFAULT GETUTCDATE()
     )
+  `);
+
+  await db.request().query(`
+    IF NOT EXISTS (SELECT * FROM sys.columns WHERE object_id = OBJECT_ID('contract_documents') AND name = 'extracted_text')
+    ALTER TABLE contract_documents ADD extracted_text NVARCHAR(MAX) NULL
   `);
 
   await cleanupExpiredDocuments();
