@@ -36,6 +36,7 @@ export default function AgentDetailPage() {
   const [outlookEnabled, setOutlookEnabled] = useState(false);
   const [powerbiBidEnabled, setPowerbiBidEnabled] = useState(false);
   const [canvaImageEnabled, setCanvaImageEnabled] = useState(false);
+  const [contractReviewEnabled, setContractReviewEnabled] = useState(false);
   // Visibility
   const [visibility, setVisibility] = useState<'private' | 'team' | 'selected'>('private');
   const [teams, setTeams] = useState<Team[]>([]);
@@ -75,6 +76,9 @@ export default function AgentDetailPage() {
           }  
         if (cfg.integrations?.canva_image) {
             setCanvaImageEnabled(true);
+          }
+          if (cfg.integrations?.contract_review) {
+            setContractReviewEnabled(true);
           }
         } catch { /* ignore parse errors */ }
 
@@ -134,6 +138,10 @@ export default function AgentDetailPage() {
       if (canvaImageEnabled) {
         config.integrations = config.integrations || {};
         config.integrations.canva_image = true;
+      }
+      if (contractReviewEnabled) {
+        config.integrations = config.integrations || {};
+        config.integrations.contract_review = true;
       }
       if (outlookEnabled) {
         config.integrations = config.integrations || {};
@@ -376,6 +384,22 @@ export default function AgentDetailPage() {
                   {canvaImageEnabled && (
                     <p className="text-xs text-surface-600 ml-6 mt-1">
                       Agent will generate an on-brand image from the Omnii Canva template with every post
+                    </p>
+                  )}
+                </div>
+                <div className="border-t border-dark-5 mt-3 pt-3">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={contractReviewEnabled}
+                      onChange={(e) => setContractReviewEnabled(e.target.checked)}
+                      className="w-4 h-4 rounded border-dark-5 text-omnii-500 focus:ring-omnii-500"
+                    />
+                    <span className="text-sm text-surface-300">Contract review (PDF upload)</span>
+                  </label>
+                  {contractReviewEnabled && (
+                    <p className="text-xs text-surface-600 ml-6 mt-1">
+                      Agent reviews attached contract PDFs against the legal team&apos;s methodology
                     </p>
                   )}
                 </div>
