@@ -110,6 +110,13 @@ class ApiClient {
     });
   }
 
+  async uploadContract(conversationId: string, filename: string, base64Data: string): Promise<{ document: { id: string; filename: string }; message: Message }> {
+    return this.request(`/api/conversations/${conversationId}/contract`, {
+      method: 'POST',
+      body: JSON.stringify({ filename, data: base64Data }),
+    });
+  }
+
   async sendMessage(conversationId: string, content: string): Promise<{ message: Message; reply: Message }> {
     return this.request(`/api/conversations/${conversationId}/messages`, {
       method: 'POST',
