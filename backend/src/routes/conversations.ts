@@ -5,6 +5,7 @@ import { getPool } from '../config/database';
 import { authenticate } from '../middleware/auth';
 import { runAgent, runAgentWithDocument } from '../services/agent-service';
 import { CONTRACT_REVIEW_PROMPT } from '../prompts/contract-review';
+import pdfParse from 'pdf-parse';
 import { fetchOLTData, fetchCEOBoardData, writeOLTReport } from '../services/monday-service';
 import { fetchOutlookData } from '../services/outlook-service';
 import { fetchClientBidData } from '../services/powerbi-service';
@@ -174,6 +175,17 @@ router.post('/:id/contract', async (req: Request, res: Response) => {
       return res.status(404).json({ error: 'Conversation not found' });
     }
 
+    // Extract the text so large contracts can be reviewed without PDF page limits
+    let extractedText: string | null = null;
+    try {
+      const parsed = await pdfParse(Buffer.from(data, 'base64'));
+      if (parsed.text && parsed.text.trim().length > 2000) {
+        extractedText = parsed.text;
+      }
+    } catch (parseErr: any) {
+      console.error('PDF text extraction failed (will fall back to native reading):', parseErr.message);
+    }
+
     const docId = uuidv4();
     await pool
       .request()
@@ -182,10 +194,11 @@ router.post('/:id/contract', async (req: Request, res: Response) => {
       .input('filename', sql.NVarChar, filename)
       .input('media_type', sql.NVarChar, 'application/pdf')
       .input('content_base64', sql.NVarChar(sql.MAX), data)
+      .input('extracted_text', sql.NVarChar(sql.MAX), extractedText)
       .input('uploaded_by', sql.UniqueIdentifier, userId)
       .query(
-        `INSERT INTO contract_documents (id, conversation_id, filename, media_type, content_base64, uploaded_by)
-         VALUES (@id, @conversation_id, @filename, @media_type, @content_base64, @uploaded_by)`
+        `INSERT INTO contract_documents (id, conversation_id, filename, media_type, content_base64, extracted_text, uploaded_by)
+         VALUES (@id, @conversation_id, @filename, @media_type, @content_base64, @extracted_text, @uploaded_by)`
       );
 
     // Record the attachment in the conversation history so it persists
@@ -410,7 +423,7 @@ ${bidContext
           .request()
           .input('conversation_id', sql.UniqueIdentifier, req.params.id)
           .query(
-            `SELECT TOP 1 filename, content_base64 FROM contract_documents
+            `SELECT TOP 1 filename, content_base64, extracted_text FROM contract_documents
              WHERE conversation_id = @conversation_id
              ORDER BY uploaded_at DESC`
           );
@@ -423,7 +436,17 @@ ${bidContext
             messages,
             agent.model || 'claude-sonnet-4-20250514'
           );
+        } else if (docResult.recordset[0].extracted_text) {
+          // Text extraction succeeded at upload — no page limits, works for any size
+          const doc = docResult.recordset[0];
+          const promptWithContract = `${reviewPrompt}\n\n---\n\n# ATTACHED CONTRACT: ${doc.filename}\nThe full extracted text of the contract under review follows.\n\n${doc.extracted_text}`;
+          assistantContent = await runAgent(
+            promptWithContract,
+            messages,
+            agent.model || 'claude-sonnet-4-20250514'
+          );
         } else {
+          // Scanned or image-based PDF — Claude reads the file natively (max ~100 pages)
           const doc = docResult.recordset[0];
           assistantContent = await runAgentWithDocument(
             reviewPrompt,
