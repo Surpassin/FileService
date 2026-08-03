@@ -5,12 +5,13 @@ const client = new Anthropic();
 export async function runAgent(
   systemPrompt: string,
   messages: { role: 'user' | 'assistant'; content: string }[],
-  model: string
+  model: string,
+  maxTokens: number = 4096
 ): Promise<string> {
   try {
     const response = await client.messages.create({
       model,
-      max_tokens: 4096,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: messages.map((m) => ({
         role: m.role,
@@ -36,7 +37,8 @@ export async function runAgentWithDocument(
   messages: { role: 'user' | 'assistant'; content: string }[],
   model: string,
   documentBase64: string,
-  documentName: string
+  documentName: string,
+  maxTokens: number = 8192
 ): Promise<string> {
   try {
     const apiMessages: Anthropic.MessageParam[] = messages.map((m, i) => {
@@ -63,7 +65,7 @@ export async function runAgentWithDocument(
 
     const response = await client.messages.create({
       model,
-      max_tokens: 8192,
+      max_tokens: maxTokens,
       system: systemPrompt,
       messages: apiMessages,
     });
