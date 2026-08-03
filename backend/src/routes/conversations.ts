@@ -434,7 +434,8 @@ ${bidContext
           assistantContent = await runAgent(
             reviewPrompt,
             messages,
-            agent.model || 'claude-sonnet-4-20250514'
+            agent.model || 'claude-sonnet-4-20250514',
+            16000
           );
         } else if (docResult.recordset[0].extracted_text) {
           // Text extraction succeeded at upload — no page limits, works for any size
@@ -443,7 +444,8 @@ ${bidContext
           assistantContent = await runAgent(
             promptWithContract,
             messages,
-            agent.model || 'claude-sonnet-4-20250514'
+            agent.model || 'claude-sonnet-4-20250514',
+            16000
           );
         } else {
           // Scanned or image-based PDF — Claude reads the file natively (max ~100 pages)
@@ -453,7 +455,8 @@ ${bidContext
             messages,
             agent.model || 'claude-sonnet-4-20250514',
             doc.content_base64,
-            doc.filename
+            doc.filename,
+            16000
           );
         }
       } else if (agentConfig.integrations?.canva_image) {
