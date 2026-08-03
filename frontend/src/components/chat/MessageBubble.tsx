@@ -9,14 +9,34 @@ interface MessageBubbleProps {
 // Renders a self-contained HTML document (e.g. a contract review) in a
 // sandboxed frame with a download button
 function ReviewDocument({ html }: { html: string }) {
-  const downloadReview = () => {
-    const blob = new Blob([html], { type: 'text/html' });
+  const dateStamp = new Date().toISOString().slice(0, 10);
+
+  // Word opens HTML documents natively; the Office XML hint sets print layout
+  const downloadWord = () => {
+    const wordHtml = html.replace(
+      /<head>/i,
+      '<head><xml><w:WordDocument xmlns:w="urn:schemas-microsoft-com:office:word"><w:View>Print</w:View></w:WordDocument></xml>'
+    );
+    const blob = new Blob(['\ufeff', wordHtml], { type: 'application/msword' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `contract-review-${new Date().toISOString().slice(0, 10)}.html`;
+    a.download = `Contract Review ${dateStamp}.doc`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  // Opens the review in a print dialog — choose "Save as PDF" as the destination
+  const downloadPdf = () => {
+    const w = window.open('', '_blank');
+    if (!w) {
+      alert('Please allow pop-ups for this site to save as PDF.');
+      return;
+    }
+    w.document.write(html);
+    w.document.close();
+    w.focus();
+    setTimeout(() => w.print(), 600);
   };
 
   return (
@@ -28,13 +48,14 @@ function ReviewDocument({ html }: { html: string }) {
         className="w-full bg-white rounded-lg border border-dark-4"
         style={{ height: '65vh', minHeight: '400px' }}
       />
-      <button
-        onClick={downloadReview}
-        className="btn-primary mt-2 text-xs px-3 py-1.5"
-        type="button"
-      >
-        ⬇ Download review (open in browser to print or save as PDF)
-      </button>
+      <div className="flex gap-2 mt-2">
+        <button onClick={downloadWord} className="btn-primary text-xs px-3 py-1.5" type="button">
+          ⬇ Download as Word
+        </button>
+        <button onClick={downloadPdf} className="btn-primary text-xs px-3 py-1.5" type="button">
+          ⬇ Save as PDF
+        </button>
+      </div>
     </div>
   );
 }
@@ -61,15 +82,26 @@ function renderTextParts(content: string) {
 }
 
 function renderContent(content: string) {
-  // Full HTML documents (e.g. contract reviews) arrive between these markers
-  const reviewMatch = content.match(/\[REVIEW_HTML\]([\s\S]*?)\[\/REVIEW_HTML\]/);
-  if (reviewMatch) {
-    const before = content.slice(0, reviewMatch.index).trim();
-    const after = content.slice((reviewMatch.index || 0) + reviewMatch[0].length).trim();
+  // Full HTML documents (e.g. contract reviews) arrive between these markers.
+  // If the closing marker was cut off, render from the open marker to the end
+  // so a truncated review still displays as a document rather than raw code.
+  const openIdx = content.indexOf('[REVIEW_HTML]');
+  if (openIdx !== -1) {
+    const closeIdx = content.indexOf('[/REVIEW_HTML]', openIdx);
+    const before = content.slice(0, openIdx).trim();
+    const html = closeIdx !== -1
+      ? content.slice(openIdx + 13, closeIdx).trim()
+      : content.slice(openIdx + 13).trim();
+    const after = closeIdx !== -1 ? content.slice(closeIdx + 14).trim() : '';
     return (
       <>
         {before && <span>{before}</span>}
-        <ReviewDocument html={reviewMatch[1].trim()} />
+        <ReviewDocument html={html} />
+        {closeIdx === -1 && (
+          <span className="text-xs text-surface-500">
+            ⚠ This review may have been cut short — ask the agent to continue or regenerate if the end is missing.
+          </span>
+        )}
         {after && <span>{after}</span>}
       </>
     );
