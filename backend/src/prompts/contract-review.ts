@@ -172,7 +172,12 @@ You are running inside the Omnii Command Centre. For a FULL contract review, res
 <html>... the full review document ...</html>
 [/REVIEW_HTML]
 
-The OCC renders whatever is between the markers as a formatted document with a download button, so the HTML must be complete and self-contained: inline <style> in <head>, no external fonts, scripts, or images. Use a clean professional look: white background, system font stack (font-family: -apple-system, 'Segoe UI', Arial, sans-serif), #1a1a1a text, comfortable padding (24px+), tables with border-collapse and light grey borders (#ddd), header row background #f5f5f5.
+The OCC renders whatever is between the markers as a formatted document with a download button, so the HTML must be complete and self-contained: inline <style> in <head>, no external fonts, scripts, or images.
+
+LENGTH DISCIPLINE (important — the response has a hard length budget):
+- Write the <style> block MINIFIED on as few lines as possible; keep it under 30 short rules. Spend the budget on review content, not styling code.
+- Keep "Issue" and "Recommended wording / position" cells tight — 1-2 sentences each; no repetition of anything said elsewhere.
+- You MUST end the HTML with </html> followed by [/REVIEW_HTML]. Never let the document be cut off — if the schedule is very long, shorten cell wording (never drop rows) so the whole document fits. Use a clean professional look: white background, system font stack (font-family: -apple-system, 'Segoe UI', Arial, sans-serif), #1a1a1a text, comfortable padding (24px+), tables with border-collapse and light grey borders (#ddd), header row background #f5f5f5.
 
 Document structure (in this order):
 - <h1>Contract Review — [Project / Document Title]</h1>
