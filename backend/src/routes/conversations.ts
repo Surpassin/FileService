@@ -6,6 +6,7 @@ import { authenticate } from '../middleware/auth';
 import { runAgent, runAgentWithDocument } from '../services/agent-service';
 import { CONTRACT_REVIEW_PROMPT } from '../prompts/contract-review';
 import pdfParse from 'pdf-parse';
+import mammoth from 'mammoth';
 import { fetchOLTData, fetchCEOBoardData, writeOLTReport } from '../services/monday-service';
 import { fetchOutlookData } from '../services/outlook-service';
 import { fetchClientBidData } from '../services/powerbi-service';
@@ -154,8 +155,14 @@ router.post('/:id/contract', async (req: Request, res: Response) => {
     if (!filename || !data) {
       return res.status(400).json({ error: 'filename and data are required' });
     }
-    if (!filename.toLowerCase().endsWith('.pdf')) {
-      return res.status(400).json({ error: 'Only PDF files are supported. Save Word contracts as PDF first.' });
+    const lower = filename.toLowerCase();
+    const isPdf = lower.endsWith('.pdf');
+    const isDocx = lower.endsWith('.docx');
+    if (!isPdf && !isDocx) {
+      if (lower.endsWith('.doc')) {
+        return res.status(400).json({ error: 'Old-format .doc files are not supported. Open it in Word and save as .docx or PDF first.' });
+      }
+      return res.status(400).json({ error: 'Only PDF and Word (.docx) files are supported.' });
     }
     // ~20 MB PDF limit (base64 is ~33% larger than the file)
     if (typeof data !== 'string' || data.length > 28 * 1024 * 1024) {
@@ -178,13 +185,31 @@ router.post('/:id/contract', async (req: Request, res: Response) => {
     // Extract the text so large contracts can be reviewed without PDF page limits
     let extractedText: string | null = null;
     try {
-      const parsed = await pdfParse(Buffer.from(data, 'base64'));
-      if (parsed.text && parsed.text.trim().length > 2000) {
-        extractedText = parsed.text;
+      const buffer = Buffer.from(data, 'base64');
+      if (isPdf) {
+        const parsed = await pdfParse(buffer);
+        if (parsed.text && parsed.text.trim().length > 2000) {
+          extractedText = parsed.text;
+        }
+      } else {
+        const parsed = await mammoth.extractRawText({ buffer });
+        if (parsed.value && parsed.value.trim().length > 200) {
+          extractedText = parsed.value;
+        }
       }
     } catch (parseErr: any) {
-      console.error('PDF text extraction failed (will fall back to native reading):', parseErr.message);
+      console.error('Document text extraction failed:', parseErr.message);
     }
+
+    // Word files have no native-reading fallback — extraction must succeed
+    if (isDocx && !extractedText) {
+      return res.status(400).json({ error: 'Could not read text from this Word document. Save it as PDF and try again.' });
+    }
+
+    // When text extraction succeeds, the review runs from the text — storing the
+    // multi-megabyte PDF bytes is unnecessary and slow on the small DB tier.
+    // Keep the bytes only for scanned/image PDFs, which need native reading.
+    const storeBytes = extractedText ? '' : data;
 
     const docId = uuidv4();
     await pool
@@ -192,8 +217,8 @@ router.post('/:id/contract', async (req: Request, res: Response) => {
       .input('id', sql.UniqueIdentifier, docId)
       .input('conversation_id', sql.UniqueIdentifier, req.params.id)
       .input('filename', sql.NVarChar, filename)
-      .input('media_type', sql.NVarChar, 'application/pdf')
-      .input('content_base64', sql.NVarChar(sql.MAX), data)
+      .input('media_type', sql.NVarChar, isPdf ? 'application/pdf' : 'application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+      .input('content_base64', sql.NVarChar(sql.MAX), storeBytes)
       .input('extracted_text', sql.NVarChar(sql.MAX), extractedText)
       .input('uploaded_by', sql.UniqueIdentifier, userId)
       .query(
