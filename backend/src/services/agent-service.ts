@@ -9,7 +9,7 @@ export async function runAgent(
   maxTokens: number = 4096
 ): Promise<string> {
   try {
-    const response = await client.messages.create({
+    const response = await client.messages.stream({
       model,
       max_tokens: maxTokens,
       system: systemPrompt,
@@ -17,7 +17,7 @@ export async function runAgent(
         role: m.role,
         content: m.content,
       })),
-    });
+    }).finalMessage();
 
     const textBlock = response.content.find((block) => block.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
@@ -63,12 +63,12 @@ export async function runAgentWithDocument(
       return { role: m.role, content: m.content };
     });
 
-    const response = await client.messages.create({
+    const response = await client.messages.stream({
       model,
       max_tokens: maxTokens,
       system: systemPrompt,
       messages: apiMessages,
-    });
+    }).finalMessage();
 
     const textBlock = response.content.find((block) => block.type === 'text');
     if (!textBlock || textBlock.type !== 'text') {
