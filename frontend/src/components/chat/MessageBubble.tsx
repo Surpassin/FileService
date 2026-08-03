@@ -1,15 +1,18 @@
 'use client';
 
+import { useState } from 'react';
 import { Message } from '@/types';
 
 interface MessageBubbleProps {
   message: Message;
 }
 
-// Renders a self-contained HTML document (e.g. a contract review) in a
-// sandboxed frame with a download button
+// Presents a completed contract review as a Word download card. The review
+// arrives as HTML, which Word opens natively — the card keeps it out of the
+// chat so the document is always accessed through Word.
 function ReviewDocument({ html }: { html: string }) {
   const dateStamp = new Date().toISOString().slice(0, 10);
+  const [showPreview, setShowPreview] = useState(false);
 
   // Word opens HTML documents natively; the Office XML hint sets print layout
   const downloadWord = () => {
@@ -41,21 +44,39 @@ function ReviewDocument({ html }: { html: string }) {
 
   return (
     <div className="my-2 w-full">
-      <iframe
-        srcDoc={html}
-        sandbox=""
-        title="Contract review document"
-        className="w-full bg-white rounded-lg border border-dark-4"
-        style={{ height: '65vh', minHeight: '400px' }}
-      />
-      <div className="flex gap-2 mt-2">
-        <button onClick={downloadWord} className="btn-primary text-xs px-3 py-1.5" type="button">
-          ⬇ Download as Word
-        </button>
-        <button onClick={downloadPdf} className="btn-primary text-xs px-3 py-1.5" type="button">
-          ⬇ Save as PDF
-        </button>
+      <div className="rounded-lg border border-dark-4 bg-dark-2 p-4">
+        <div className="flex items-center gap-3">
+          <span className="text-2xl">📄</span>
+          <div>
+            <p className="text-sm font-medium text-surface-200">Contract review ready</p>
+            <p className="text-xs text-surface-500">Download and open in Microsoft Word</p>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-2 mt-3">
+          <button onClick={downloadWord} className="btn-primary text-sm px-4 py-2" type="button">
+            ⬇ Download as Word
+          </button>
+          <button onClick={downloadPdf} className="btn-primary text-xs px-3 py-1.5 opacity-80" type="button">
+            Save as PDF
+          </button>
+          <button
+            onClick={() => setShowPreview((v) => !v)}
+            className="text-xs px-3 py-1.5 text-surface-400 border border-dark-4 rounded-lg"
+            type="button"
+          >
+            {showPreview ? 'Hide preview' : 'Show preview'}
+          </button>
+        </div>
       </div>
+      {showPreview && (
+        <iframe
+          srcDoc={html}
+          sandbox=""
+          title="Contract review document"
+          className="w-full bg-white rounded-lg border border-dark-4 mt-2"
+          style={{ height: '65vh', minHeight: '400px' }}
+        />
+      )}
     </div>
   );
 }
