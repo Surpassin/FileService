@@ -24,8 +24,11 @@ export default function ChatInterface({ conversationId, agentId }: ChatInterface
     e.target.value = '';
     if (!file || isUploading) return;
 
-    if (!file.name.toLowerCase().endsWith('.pdf')) {
-      alert('Only PDF files are supported. Save Word contracts as PDF first.');
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith('.pdf') && !lower.endsWith('.docx')) {
+      alert(lower.endsWith('.doc')
+        ? 'Old-format .doc files are not supported. Save as .docx or PDF first.'
+        : 'Only PDF and Word (.docx) files are supported.');
       return;
     }
     if (file.size > 20 * 1024 * 1024) {
@@ -168,7 +171,7 @@ export default function ChatInterface({ conversationId, agentId }: ChatInterface
           <input
             ref={fileInputRef}
             type="file"
-            accept=".pdf,application/pdf"
+            accept=".pdf,.docx,application/pdf,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
             onChange={handleFileSelected}
             className="hidden"
           />
@@ -176,7 +179,7 @@ export default function ChatInterface({ conversationId, agentId }: ChatInterface
             type="button"
             onClick={() => fileInputRef.current?.click()}
             disabled={isUploading || isSending}
-            title="Attach a contract PDF"
+            title="Attach a contract (PDF or Word)"
             className="btn-primary px-3"
           >
             {isUploading ? (
