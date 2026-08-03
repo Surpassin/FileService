@@ -100,12 +100,30 @@ export default function ChatInterface({ conversationId, agentId }: ChatInterface
         const withoutTemp = prev.filter((m) => m.id !== tempUserMsg.id);
         return [...withoutTemp, data.message, data.reply];
       });
+      setIsSending(false);
     } catch (err) {
-      console.error('Failed to send message:', err);
-      // Remove optimistic message on error
-      setMessages((prev) => prev.filter((m) => m.id !== tempUserMsg.id));
-      setInput(content); // Restore input
-    } finally {
+      console.error('Connection dropped, polling for the reply:', err);
+      // Long tasks (e.g. contract reviews) can outlive the connection while the
+      // server keeps working. Poll the conversation until the reply appears.
+      const baseline = messages.length + 1; // + our message
+      let found = false;
+      for (let attempt = 0; attempt < 20; attempt++) {
+        await new Promise((r) => setTimeout(r, 15000));
+        try {
+          const data = await api.getConversation(conversationId);
+          const all = data.messages || [];
+          if (all.length > baseline && all[all.length - 1].role === 'assistant') {
+            setMessages(all);
+            found = true;
+            break;
+          }
+        } catch { /* keep polling */ }
+      }
+      if (!found) {
+        setMessages((prev) => prev.filter((m) => m.id !== tempUserMsg.id));
+        setInput(content); // Restore input so nothing is lost
+        alert('The reply is taking unusually long. Refresh the page in a minute — it may still arrive.');
+      }
       setIsSending(false);
     }
   };
